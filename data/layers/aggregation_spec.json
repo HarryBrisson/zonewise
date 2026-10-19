@@ -1,0 +1,97 @@
+{
+  "contract": "byop/v1",
+  "source": "zonewise",
+  "source_url": "https://github.com/HarryBrisson/zonewise",
+  "caveat": "Pre-2023 ordinances were migrated from Legistar; their district codes come from OCR of scanned PDFs. Districts are the change as written in the ordinance or committee agenda; a substitute ordinance can differ. Ward values use today's ward map, not the map in force when it passed.",
+  "coverage": {
+    "first_full_year": 2011,
+    "as_of": "2026-10-19"
+  },
+  "layers": {
+    "rezonings": {
+      "file": "rezonings.geojson",
+      "kind": "points",
+      "value": "one point per zoning map amendment the City Council passed; properties.passed_date, from/to district, upzoning, downzoning, to_multifamily, pd_or_pmd, far_delta, capacity_sqft_delta"
+    },
+    "rezonings_far_known": {
+      "file": "rezonings_far_known.geojson",
+      "kind": "points",
+      "value": "the passed rezonings whose before and after floor-area ratio are both known (the base for the upzoning share)"
+    },
+    "rezonings_use_known": {
+      "file": "rezonings_use_known.geojson",
+      "kind": "points",
+      "value": "the passed rezonings whose before and after residential use permissions are both known (the base for the multifamily share)"
+    }
+  },
+  "metrics": {
+    "rezonings_passed_per_km2": {
+      "layer": "rezonings",
+      "combine": "count",
+      "per": "area_km2",
+      "unit": "rate",
+      "direction": "higher",
+      "label": "Rezonings Passed",
+      "description": "Zoning map changes the City Council passed per square kilometer in the year.",
+      "methodology": "Count of passed zoning map amendments (Type 1, standard and aldermanic) per km\u00b2, by year passed. Ordinances come from the City Clerk's eLMS (matterCategory ZONING RECLASSIFICATIONS); from/to districts are read from each ordinance PDF (OCR where scanned) or the Zoning Committee agenda, placed by the Census batch geocoder, and counted in the calendar year the City Council passed them.",
+      "time_field": "passed_date",
+      "years": [
+        2011,
+        2026
+      ],
+      "category": "good_governance"
+    },
+    "rezonings_upzoning_share": {
+      "layer": "rezonings_far_known",
+      "combine": "share",
+      "flag": "upzoning",
+      "scale": 100,
+      "unit": "percent",
+      "direction": "higher",
+      "label": "Upzoning Share",
+      "description": "Of the year's rezonings, the share that raised how much building the lot allows.",
+      "methodology": "Share of passed rezonings whose new district has a higher maximum floor-area ratio than the old one (Chicago Zoning Ordinance FAR tables, 17-2-0304, 17-3-0403, 17-4-0405, 17-5-0404; a Planned Development takes its underlying district's FAR per 17-8-0901). Rezonings with an unknown FAR on either side are left out. Ordinances come from the City Clerk's eLMS (matterCategory ZONING RECLASSIFICATIONS); from/to districts are read from each ordinance PDF (OCR where scanned) or the Zoning Committee agenda, placed by the Census batch geocoder, and counted in the calendar year the City Council passed them.",
+      "time_field": "passed_date",
+      "years": [
+        2011,
+        2026
+      ],
+      "category": "material_wellbeing"
+    },
+    "rezonings_to_multifamily_share": {
+      "layer": "rezonings_use_known",
+      "combine": "share",
+      "flag": "to_multifamily",
+      "scale": 100,
+      "unit": "percent",
+      "direction": "higher",
+      "label": "Multifamily Rezonings",
+      "description": "Of the year's rezonings, the share that newly allowed apartment buildings (3+ units).",
+      "methodology": "Share of passed rezonings to a district that permits multi-unit (3+) residential from one that did not (use tables 17-2-0207, 17-3-0207, 17-4-0207). Ordinances come from the City Clerk's eLMS (matterCategory ZONING RECLASSIFICATIONS); from/to districts are read from each ordinance PDF (OCR where scanned) or the Zoning Committee agenda, placed by the Census batch geocoder, and counted in the calendar year the City Council passed them.",
+      "time_field": "passed_date",
+      "years": [
+        2011,
+        2026
+      ],
+      "category": "material_wellbeing"
+    },
+    "zoned_capacity_added_sqft_per_km2": {
+      "layer": "rezonings",
+      "combine": "sum",
+      "value": "capacity_sqft_delta",
+      "per": "area_km2",
+      "unit": "rate",
+      "direction": "higher",
+      "label": "Zoned Capacity Added",
+      "description": "Net floor area that the year's rezonings added to what the zoning allows, in square feet per km\u00b2.",
+      "methodology": "\u03a3 (new max FAR \u2212 old max FAR) \u00d7 lot area over passed rezonings, per km\u00b2. Lot area = Cook County 2021 parcel polygons for the PINs at the ordinance's address range (Assessor Parcel Addresses); rezonings with unknown FAR or lot area add nothing, so this is a floor. Ordinances come from the City Clerk's eLMS (matterCategory ZONING RECLASSIFICATIONS); from/to districts are read from each ordinance PDF (OCR where scanned) or the Zoning Committee agenda, placed by the Census batch geocoder, and counted in the calendar year the City Council passed them.",
+      "time_field": "passed_date",
+      "years": [
+        2011,
+        2026
+      ],
+      "category": "material_wellbeing"
+    }
+  },
+  "fixed_geography_metrics": {}
+}

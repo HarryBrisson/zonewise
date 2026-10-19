@@ -1,0 +1,15 @@
+[project]
+name = "zonewise"
+version = "0.1.0"
+description = "Chicago rezonings (City Clerk eLMS) as a byop/v1 points measure source: passed map amendments with from/to district, FAR delta and zoned capacity added."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+[project.optional-dependencies]
+ocr = ["pyobjc-framework-Vision>=10"]  # macOS Vision OCR for scanned ordinance PDFs
+dev = ["pytest>=7"]
+[tool.setuptools]
+packages = ["zonewise"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
