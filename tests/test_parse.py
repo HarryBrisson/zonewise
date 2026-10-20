@@ -147,6 +147,16 @@ def test_reconcile_map_beats_as_introduced_text_of_a_substitute():
     assert info["district_source"] == "parsed" and row["to_district"] == "C1-1"
 
 
+def test_reconcile_keeps_the_journal_reading_like_passed_text():
+    # a substitute that didn't read, its districts taken from the Journal: the passed text, kept on conflict
+    row, info = reconcile(_rez("RS-3", "B1-1", method="journal", substitute_unread=True), _map("C1-1"))
+    assert info["district_source"] == "journal" and info["map_check"] == "disagrees" and row["to_district"] == "B1-1"
+    row, info = reconcile(_rez("RS-3", "B1-1", method="journal", substitute_unread=True), _map("B1-1"))
+    assert info["district_source"] == "journal" and info["map_check"] == "agrees"
+    row, info = reconcile(_rez("B3-2", "B3-5", method="journal"), _map("PD29"))  # a missed PD step still completes
+    assert info["district_source"] == "city_map_pd_step" and row["district_chain"] == "B3-5>PD-29"
+
+
 def test_ordinance_to_clause_tolerates_ocr_and_typos():
     # SO2011-1472's substitute: "to those o f a" (OCR); the Journal's SO2011-5141: "to those an"
     head = ("SECTION 1. Title 17 of the Municipal Code of Chicago, the Chicago Zoning Ordinance, is hereby amended by "
@@ -158,6 +168,8 @@ def test_ordinance_to_clause_tolerates_ocr_and_typos():
     # O2011-4297: "RM5-5" is no district; the only reading is RM-5.5 (the map's and the Journal's)
     assert codes_in("RM5-5 Residential Multi-Unit") == ["RM-5.5"] and codes_in("RM 4-5") == ["RM-4.5"]
     assert codes_in("B1-5 Neighborhood Shopping") == ["B1-5"]
+    # SO2014-1519 in the Journal: "to those of a T (Transportation) District"
+    assert codes_in("a T (Transportation) District") == ["T"] and codes_in("a T Transportation District") == ["T"]
 
 
 def test_reconcile_fills_unparsed_but_not_from_weak_2014_match():

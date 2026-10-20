@@ -5,7 +5,7 @@
   "caveat": "Pre-2023 ordinances were migrated from Legistar; their district codes come from OCR of scanned PDFs. Districts are the change as written in the ordinance or committee agenda; where only the as-introduced text of a substitute ordinance was readable, the City map's district is used. Ward values use today's ward map, not the map in force when it passed. Of the rezonings matched to the City zoning map, 97.7% agree with it; conflicts with the passed ordinance text are kept as the text reads (the Council's Journal of Proceedings backs the text in 37 of 38 checked) and flagged (map_check).",
   "coverage": {
     "first_full_year": 2011,
-    "as_of": "2026-10-19"
+    "as_of": "2026-10-20"
   },
   "layers": {
     "rezonings": {

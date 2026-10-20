@@ -17,9 +17,9 @@ fields), and is built for ward-wise-civic-tech / Penlight. The name `zonewise` i
   2017 451 · 2018 459 · 2019 358 · 2020 308 · 2021 361 · 2022 364 · 2023 302 · 2024 322 · 2025 469.
 - **Exact-match query undercounts.** The exact-match query copied from the alerts digest covers only
   1,231 of the 5,815. The rest are Legistar-migrated records, which the category range picks up.
-- **District parse: 97.8% from text.** The ordinance clause gives 5,367, the committee agenda 314
-  and the application form 9. With the City zoning map filling gaps (below), 5,775 of 5,815
-  (99.3%) have a to-district.
+- **District parse: 98.2% from text.** The ordinance clause gives 5,191, the Council Journal 236
+  (substitutes whose PDF didn't read), the committee agenda 277 and the application form 8. With
+  the City zoning map filling gaps (below), 5,781 of 5,815 (99.4%) have a to-district.
   - The LLM-select step did not run: no `OPENAI_API_KEY` was available.
   - Where both the ordinance and the agenda were read, they agree on 3,403 and disagree on 147. The
     disagreements are mostly substitute ordinances whose passed text differs from the committee's
@@ -27,15 +27,15 @@ fields), and is built for ward-wise-civic-tech / Penlight. The name `zonewise` i
 - **Checked against the City's own zoning map: 4,846 of 5,815 (83%).** Coverage by year runs from
   63% in 2011 to 96% in 2025 (see [Truth check](#truth-check-the-citys-zoning-map)).
   - Where the match is solid (by application or Clerk number), our to-district agrees with the
-    map on **4,543 of 4,650 (97.7%)**.
+    map on **4,571 of 4,666 (98.0%)**.
   - From-districts agree with an earlier map snapshot on 1,863 of 1,994 (93.4%).
 - **Placement: 99.3%.** 4,735 points at the rezoned map polygon, 1,020 from the Census geocoder
   and 18 from parcel centroids.
-- **Known FAR change: 5,202.** Of these, 3,198 are upzonings, 806 downzonings and the rest lateral.
-- **Known use change: 5,165**, of which 1,908 newly allow 3+ unit housing.
-- **Capacity delta known: 5,057.** Lot area comes from parcels inside the rezoned map polygon for
-  4,634 and from parcels at the address range for 963.
-- **PD or PMD involved:** 904.
+- **Known FAR change: 5,206.** Of these, 3,200 are upzonings, 805 downzonings and the rest lateral.
+- **Known use change: 5,166**, of which 1,908 newly allow 3+ unit housing.
+- **Capacity delta known: 5,060.** Lot area comes from parcels inside the rezoned map polygon for
+  4,635 and from parcels at the address range for 963.
+- **PD or PMD involved:** 906.
 - **Application types:** 1,763 Type 1, 430 aldermanic, 3,004 standard map amendments, and 618 with
   no application number in the title.
 
@@ -49,27 +49,30 @@ again has lost its tag in today's map, so three archived snapshots are searched 
 
 | Map | Portal id | As of | Tags | Matched | Agree |
 |---|---|---|---|---|---|
-| current | `dj47-wfun` | 2026-10 | app no + clerk doc + date | 4,582 | 4,397 of 4,501 parsed (97.7%; incl. 3 chain-step) |
+| current | `dj47-wfun` | 2026-10 | app no + clerk doc + date | 4,582 | 4,423 of 4,515 parsed (98.0%) |
 | 2015-12 | `xfyf-x4kx` | 2015-12-09 | app no + date | 125 | 118 of 121 parsed (97.5%) |
 | 2014-09 | `nifi-zqag` | 2014-09-29 | ordinance **date only** | 111 | 76 of 98 parsed (78%), so check-only |
 | 2012-11 | `p8va-airx` (shapefile) | 2012-11-21 | app no + date | 28 | 28 of 28 |
 
 How conflicts are resolved (`district_source`, `map_check` on every point):
 
-- **Missed PD step: 52.** The map shows a PD where we read only the first step of a two-step
+- **Missed PD step: 51.** The map shows a PD where we read only the first step of a two-step
   ordinance (B3-2 → B3-5 → PD). The PD is appended to the chain, so the FAR stays the underlying
   district's (`city_map_pd_step`).
 - **Agenda or application reading: 4.** The map wins over a committee *request*
   (`city_map_override`).
-- **As-introduced text of a substitute: 13.** The matter passed as a substitute ordinance whose
-  PDF didn't read, so what we read is the ordinance as introduced: a request again. The map wins
-  (`city_map_substitute`); the Journal of Proceedings sided with the map in all 13
-  ([Journal check](#journal-check-the-passed-text)).
-- **Passed ordinance text vs. map: 38.** Kept as the text reads and flagged
-  `map_check: disagrees`, listed in `data/review/map_conflicts.csv`. The Journal sided with the
-  text in 37 of 38: the map's tag is stale, or a later change kept it. The exception, SO2026-0023984,
-  has another matter's ordinance (`SO2026-0023894 Final Ordinance.pdf`) attached in eLMS.
-- **Unparsed: 85 filled.** Matters with no readable text take the map's class (`city_map`). The
+- **Substitute PDF unreadable: read from the Journal, 236.** When a matter passed as a substitute
+  whose PDF didn't read, what we would read is the ordinance as introduced or the committee's
+  request. Parse takes the districts from the Council Journal's printing of the passed text
+  instead (`parse_method: journal`, `journal_page`). Where the Journal can't be read either (19,
+  mostly long PD ordinances) and the map disagrees, the map wins (`city_map_substitute`; none at
+  present).
+- **Passed text vs. map: 40.** The ordinance (38) or its Journal printing (2) is kept as it reads
+  and flagged `map_check: disagrees`, listed in `data/review/map_conflicts.csv`. The Journal sided
+  with the ordinance text in 37 of 38 adjudicated: the map's tag is stale, or a later change kept
+  it. The exception, SO2026-0023984, has another matter's ordinance
+  (`SO2026-0023894 Final Ordinance.pdf`) attached in eLMS.
+- **Unparsed: 69 filled.** Matters with no readable text take the map's class (`city_map`). The
   from-district comes from the earlier snapshot when one is within 3 years (`city_map+prior_snapshot`).
 - **The 2014-09 snapshot** matches on date + proximity (1,500 ft) only. It is used to check, never
   to fill, place or measure.
@@ -101,6 +104,14 @@ and falls back to the application number when the tag is mistyped.
 | … substitute on file but unread; reading = as-introduced original | 13 | map 13 |
 | … parser bugs, fixed ("to those o f a", "RM5-5") | 2 | map 2 |
 | Random rezonings with no map polygon (seed 20261019) | 30 | parsed reading 29 of 29 read; 1 Journal not yet published |
+
+Since 2026-10-20, parse also reads the Journal for every passed matter whose substitute PDF
+didn't read (255): 236 read, 19 not (mostly long PD ordinances; 2 Journals not yet published or
+the item not found). The Journal changed 49 readings (20 had none, 14 got a different
+to-district, the rest a different from-district or PD step), including 11 of the 43 that have no
+map polygon. Where the map can check them, 186 of 191 Journal readings agree with it; 3 of the 5
+are a missed PD step (completed from the map as usual) and 2 are maps tagged with a later change
+(SO2018-2302, SO2022-3458: the Journal plainly prints C3-3 and C1-1).
 
 So the rule is by source, not by map vs. text: the passed text (substitute, or the only
 ordinance) beats the map, and the map beats any request (agenda, application, as-introduced
@@ -188,7 +199,8 @@ them before this source is released (see ward-wise-measures `CONTRACT.md`, "Time
 `to_multifamily`, `pd_or_pmd`, `far_delta`, `from_far`, `to_far`, `to_far_basis`,
 `capacity_sqft_delta`, `lot_area_sqft`, `address`, `matter_id`, `record_number`, `app_no`,
 `app_kind` (`type_1` / `aldermanic` / `map_amendment`), `type_1`, `introduced_date`,
-`parse_method`, `geocode_source`, `lot_area_source`, `district_source`, `parsed_to_district`,
+`parse_method` (`regex_ordinance` / `regex_agenda` / `regex_application` / `journal` / `none`),
+`journal_page` (the printed Journal of Proceedings page, when `parse_method` is `journal`), `geocode_source`, `lot_area_source`, `district_source`, `parsed_to_district`,
 `map_check` (`agrees` / `agrees_chain_step` / `disagrees` / `unparsed` / null), `map_from_check`,
 `map_snapshot`, `map_zone_classes`, `map_area_sqft` (tagged polygon area, which runs to street
 and alley centerlines), `url` (the eLMS matter page).
@@ -204,7 +216,7 @@ A field is `null` when it isn't known. Nothing is guessed.
 | Truth set, rezoned areas | **City of Chicago zoning-district map**: current (`dj47-wfun`), our own monthly copies of it from 2026-10-19 (`data/raw/city_zoning_archive/`), and the portal's archived snapshots `xfyf-x4kx` (2015-12), `nifi-zqag` (2014-09) and `p8va-airx` (2012-11 shapefile). See [Truth check](#truth-check-the-citys-zoning-map). |
 | Points | The interior point of the rezoned map polygon; otherwise the **US Census Bureau batch geocoder** (`Public_AR_Current`), with the request format copied from ward-wise-civic-tech `census_geocode.py`. When the Census geocoder misses but the address matched parcels, the fallback is the parcel centroid from **Cook County Assessor Parcel Universe** (`pabr-t5kh`). |
 | Lot area | **ccgisdata Parcel 2021** (`77tz-riq7`): parcels whose centroid falls inside the rezoned map polygon(s) of the final district. Fallback: **Cook County Assessor Parcel Addresses** (`3723-97qp`, tax year 2025) gives address → PIN. **ccgisdata Parcel 2021** (`77tz-riq7`) polygons give PIN → area. Parcel Universe has no land-area field. |
-| Passed text | City Council **Journal of the Proceedings** PDFs (chicityclerk.com, taxonomy term 16), read at the page eLMS cites for the "Passed" action. Used to adjudicate map conflicts and spot-check, not for every matter. |
+| Passed text | City Council **Journal of the Proceedings** PDFs (chicityclerk.com, taxonomy term 16), read at the page eLMS cites for the "Passed" action. Districts for substitutes whose PDF didn't read; adjudicates map conflicts; spot-check. Not read for every matter. |
 | District → FAR, multifamily | `data/districts.csv`. It is version-controlled, and every row cites its Chicago Zoning Ordinance (Municipal Code Title 17) section from the American Legal Publishing text, current through at least Coun. J. 10-16-25. |
 
 ## Method
@@ -221,6 +233,11 @@ A field is `null` when it isn't known. Nothing is guessed.
      … to those of an RM-5 …")
    - the committee "Change Request"
    - the legacy application form's "Present / Proposed Zoning District"
+
+   When the matter has a substitute ordinance whose PDF didn't read, the Council Journal's
+   printing of the passed text replaces whatever was read (`parse_method: journal`; the reading it
+   replaced is kept as `superseded_reading` in `rezonings.csv`). It comes from the raw Journal
+   page cache that step 8 fills.
 
    OCR repairs cover `83-2`→`B3-2`, `Ml-2`→`M1-2`, `RS I`→`RS-1`, and codes are cross-checked
    against their descriptive names. A code is accepted only if the ordinance actually defines that
@@ -253,8 +270,9 @@ A field is `null` when it isn't known. Nothing is guessed.
 7. **Spot-check** (`python -m zonewise sample -n 20`). The latest sample is in
    `data/spot_check_sample.txt`.
 8. **Journal** (`python -m zonewise journal`, separate: it downloads ~30 MB per meeting). Reads the
-   passed text for every ordinance-vs-map conflict plus 30 random unchecked rezonings
-   ([Journal check](#journal-check-the-passed-text)). The adjudication file is a ledger: a conflict
+   passed text for every ordinance-vs-map conflict, every substitute whose PDF didn't read, and 30
+   random unchecked rezonings ([Journal check](#journal-check-the-passed-text)); four meetings at
+   a time, ~1 hour for ~110 meetings. Rerun `parse` and `build` after it. The adjudication file is a ledger: a conflict
    stays in it, with the reading that was flagged, after a re-parse or a rule resolves it.
 
 `python -m zonewise all` runs steps 2–7 from the cache, and `python -m zonewise refresh` runs
@@ -267,10 +285,11 @@ Requirements: Python ≥ 3.11 and poppler (`pdftotext`, `pdftoppm`). OCR also ne
 
 - **Requested vs. passed text.** The district change is read from the ordinance PDF attached to
   the matter, or from the committee agenda. A substitute ordinance (`SO…` record numbers) or a
-  committee amendment can change the district before passage. Where only the as-introduced text of
-  a substitute was readable and the map disagrees, the map's district is used; with no map polygon
-  the as-introduced reading stands. The Journal of Proceedings, the final text, is read for the
-  conflicts and a sample only ([Journal check](#journal-check-the-passed-text)).
+  committee amendment can change the district before passage. Where a substitute's PDF didn't
+  read, the district comes from the Council Journal's printing of the passed text (236 of 255);
+  failing that, from the map when it disagrees; with neither, the as-introduced reading stands (3).
+  The Journal is not read for matters whose own ordinance PDF read, except the map conflicts and a
+  sample ([Journal check](#journal-check-the-passed-text)).
 - **OCR.** Pre-2023 documents are scanned paper with OCR text layers of uneven quality. Modern
   ordinance PDFs are image-only, and we OCR them. Codes that fail validation are dropped, not
   guessed.

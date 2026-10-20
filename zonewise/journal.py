@@ -21,6 +21,7 @@ import hashlib
 import html as htmllib
 import re
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -202,12 +203,21 @@ def passed_action(detail: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _complete(pages: list[dict[str, Any]], t: dict[str, Any]) -> bool:
-    """A cached read is complete once the Journal's to-clause reads from it; one that stopped
-    short (an earlier, narrower tag pattern or page window) is read again."""
-    return bool(pages) and bool(read_passed(t["record_number"], _dedup(pages), t.get("app_no")))
+    """A cached read is complete once the Journal's to-clause reads from it, or its tag (or
+    application line) is cached with the AFTER_TAG pages after it (the text is there; the reader
+    can't parse it, and downloading the Journal again won't help). A read that stopped short of
+    the tag (an earlier, narrower pattern) is read again."""
+    pages = _dedup(pages)
+    if not pages:
+        return False
+    if read_passed(t["record_number"], pages, t.get("app_no")):
+        return True
+    indexes = {p["pdf_page_index"] for p in pages}
+    return any(_anchor(p["text"], t["record_number"], t.get("app_no"))
+               and all(p["pdf_page_index"] + k in indexes for k in range(1, AFTER_TAG + 1)) for p in pages)
 
 
-def fetch_journal_pages(targets: list[dict[str, Any]]) -> None:
+def fetch_journal_pages(targets: list[dict[str, Any]], *, workers: int = 4) -> None:
     """targets: [{matter_id, record_number, meeting_date, journal_page}]. Downloads each meeting's
     Journal PDF(s) once, caches the cited page(s) per matter, and logs misses."""
     fetch_index()
@@ -221,13 +231,13 @@ def fetch_journal_pages(targets: list[dict[str, Any]]) -> None:
     for t in todo:
         by_date.setdefault(t["meeting_date"], []).append(t)
     log(f"journal pages: {len(have)} matters cached, {len(todo)} to read over {len(by_date)} meetings")
-    for day, items in sorted(by_date.items()):
+    def one(day: str, items: list[dict[str, Any]]) -> None:
         pdfs = index.get(day) or []
         if not pdfs:  # an action stamped near midnight UTC can land a day off the meeting
             pdfs = [e for d in (_shift(day, -1), _shift(day, 1)) for e in index.get(d) or []]
         if not pdfs:
             log(f"  {day}: no Journal listed for this meeting ({[t['record_number'] for t in items]})")
-            continue
+            return
         left = list(items)
         for entry in pdfs:
             if not left:
@@ -252,6 +262,11 @@ def fetch_journal_pages(targets: list[dict[str, Any]]) -> None:
                                          "method": journal.method, "fetched_at": now_iso(), "text": journal.pages[i]})
         for t in left:
             log(f"  {day}: cited page {t['journal_page']} for {t['record_number']} not found in {len(pdfs)} PDF(s)")
+
+    # a meeting is a ~30 MB download plus a full-text pass: a few at a time (S3, not eLMS)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for future in as_completed([pool.submit(one, day, items) for day, items in sorted(by_date.items())]):
+            future.result()
 
 
 def cached_pages() -> dict[str, list[dict[str, Any]]]:
@@ -302,14 +317,31 @@ def meeting_date(action: dict[str, Any]) -> str:
     return stamp.astimezone(CHICAGO).strftime("%Y-%m-%d")
 
 
+def passed_reads(app_numbers: dict[str, str | None]) -> dict[str, dict[str, Any]]:
+    """{matter_id: {from, chain, to, journal_page, journal_pdf}} for every matter whose cached
+    Journal pages yield its passed clause (app_numbers: {matter_id: application number}, the
+    fallback anchor). Derived from the raw page cache on each call."""
+    out = {}
+    for matter_id, pages in cached_pages().items():
+        pages = _dedup(pages)
+        read = read_passed(pages[0]["record_number"], pages, app_numbers.get(matter_id))
+        if read:
+            out[matter_id] = {"from": read["from"], "chain": read["chain"], "to": read["to"],
+                              "journal_page": pages[0]["journal_page"] or pages[0]["printed_page"] or "",
+                              "journal_pdf": pages[0]["pdf_url"]}
+    return out
+
+
 # ------------------------------------------------------------------------------------------------
 # Adjudication: which reading does the passed text support?
 # ------------------------------------------------------------------------------------------------
 def normalize(text: str) -> str:
     """Typesetting quirks of the Journal's text layer that the ordinance reader doesn't expect:
-    letter-spaced codes ("R S 3", "B 1-2", "RM4 .5", "aB2-2", "S E C T I O N"), OCR'd "RIMS", 'a"' for "all", a dropped "of" ("to those an M2-2")."""
+    letter-spaced codes ("R S 3", "B 1-2", "RM4 .5", "aB2-2", "S E C T I O N"), OCR'd "RIMS", "DX-s", "RME", 'a"' for "all", a dropped "of" ("to those an M2-2")."""
     text = re.sub(r"\bR\s(S|T|M)\s?(\d)", r"R\1\2", text)
     text = re.sub(r"\bRI[MV](?=[S\d]\b)", "RM", text)  # OCR'd "RIMS" = RM5
+    text = re.sub(r"\b(D[XRSC]|[BCM][123]|R[MT])\s?-\s?[sS]\b", r"\1-5", text)  # "DX-s", "DX-S" = DX-5
+    text = re.sub(r"\bRME(?=\s+Residential)", "RM6", text)  # "an RME Residential Multi-Unit" = RM6
     text = re.sub(r"\b([BCM])\s([123]\s?-)", r"\1\2", text)  # "B 1-2"
     text = re.sub(r"S\s?E\s?C\s?T\s?I\s?O\s?N", "SECTION", text)
     text = re.sub(r"\bchanging\s+a\"\s", "changing all ", text)  # 'a"' for "all"
@@ -392,8 +424,13 @@ def run_journal(*, spot_n: int = 30) -> None:
 
     details = cached_details()
     before = ledger()
-    chosen = adjudication_sets(assemble(), spot_n=spot_n)
-    fetch_journal_pages([target(i["row"]["matter_id"], details[i["row"]["matter_id"]], i["row"]["passed_date"]) for _, i in chosen])
+    items = assemble()
+    chosen = adjudication_sets(items, spot_n=spot_n)
+    # plus every passed matter whose substitute ordinance didn't read: parse takes its passed
+    # districts from the Journal instead of the as-introduced original
+    substitutes = [i for i in items if i["row"].get("substitute_unread") == "True"]
+    wanted = {i["row"]["matter_id"]: i for _, i in chosen} | {i["row"]["matter_id"]: i for i in substitutes}
+    fetch_journal_pages([target(m, details[m], i["row"]["passed_date"]) for m, i in wanted.items()])
     pages = cached_pages()
     rows = []
     for kind, item in chosen:

@@ -117,11 +117,13 @@ def reconcile(row: dict[str, str], m: dict[str, str]) -> tuple[dict[str, str], d
     Where we parsed nothing, or read only a request (agenda, application, the as-introduced text of
     an ordinance that passed as a substitute), or missed a PD step, the map's dominant
     (largest-area) class becomes the to-district; the parsed value is kept in parsed_to_district.
-    Where the passed ordinance text itself disagrees, the text stands (the Journal of Proceedings
+    Where the passed text disagrees (the ordinance, or for a substitute whose PDF didn't read, its
+    printing in the Journal of Proceedings, parse_method "journal"), the text stands (the Journal
     backs it in 37 of 38 adjudicated conflicts) and map_check flags it."""
     from .citymap import map_to_code, norm_class
 
-    info: dict[str, Any] = {"map_check": None, "district_source": "parsed" if row["to_district"] else None,
+    text_source = "journal" if row["parse_method"] == "journal" else "parsed"  # the Journal: the passed text
+    info: dict[str, Any] = {"map_check": None, "district_source": text_source if row["to_district"] else None,
                             "parsed_to_district": row["to_district"] or None, "map_from_check": None}
     if not m.get("map_snapshot"):
         return row, info
@@ -150,17 +152,17 @@ def reconcile(row: dict[str, str], m: dict[str, str]) -> tuple[dict[str, str], d
             # a two-step ordinance whose PD step we missed: keep ours as the underlying district
             info["district_source"] = "city_map_pd_step"
             row.update(to_district=dominant, district_chain=f"{row['to_district']}>{dominant}")
-        elif row["parse_method"] != "regex_ordinance":
+        elif row["parse_method"] not in ("regex_ordinance", "journal"):
             # a committee "Change Request" or application form is the request, the map is the result
             info["district_source"] = "city_map_override"
             row.update(to_district=dominant, district_chain=dominant)
-        elif row.get("substitute_unread") == "True":
+        elif row["parse_method"] == "regex_ordinance" and row.get("substitute_unread") == "True":
             # the matter passed as a substitute we couldn't read, so our reading is the ordinance as
-            # introduced: a request again. The Journal of Proceedings sided with the map in 13 of 13
+            # introduced: a request again (parse reads the Journal instead where it can). The Journal of Proceedings sided with the map in 13 of 13
             # such conflicts (data/review/journal_adjudication.csv)
             info["district_source"] = "city_map_substitute"
             row.update(to_district=dominant, district_chain=dominant)
-        # else: the passed ordinance text and the map conflict. The Journal sided with the text in
+        # else: the passed ordinance text (or its Journal printing) and the map conflict. The Journal sided with the text in
         # 37 of 38 (the map's tag is stale or a later change kept it): keep it and leave the flag
     if m.get("map_from_class") and row["from_districts"] and info["district_source"] != "city_map+prior_snapshot":
         info["map_from_check"] = norm_class(m["map_from_class"]) in {norm_class(c) for c in row["from_districts"].split("+")}
@@ -244,6 +246,7 @@ def feature(item: dict[str, Any]) -> dict[str, Any]:
         "type_1": row["type_1"] == "True",
         "introduced_date": row["introduced_date"] or None,
         "parse_method": row["parse_method"],
+        "journal_page": int(row["journal_page"]) if row.get("journal_page") else None,
         "geocode_source": item["geocode_source"],
         "url": row["url"],
     }}
@@ -350,7 +353,7 @@ def run_build() -> None:
     write_geojson(LAYERS / "rezonings.geojson", features)
     write_geojson(LAYERS / "rezonings_far_known.geojson", [f for f in features if f["properties"]["far_delta"] is not None])
     write_geojson(LAYERS / "rezonings_use_known.geojson", [f for f in features if f["properties"]["to_multifamily"] is not None])
-    write_conflicts([i for i in placed if i["map_check"] == "disagrees" and i["district_source"] == "parsed"
+    write_conflicts([i for i in placed if i["map_check"] == "disagrees" and i["district_source"] in ("parsed", "journal")
                      and i["map"].get("map_snapshot") != "2014-09"])
     earliest, first_full = coverage_years(items)
     (LAYERS / "aggregation_spec.json").write_text(json.dumps(spec(first_full, date.today().isoformat()), indent=2) + "\n")

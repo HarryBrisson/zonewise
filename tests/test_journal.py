@@ -26,6 +26,8 @@ def test_journal_normalize():
     assert codes_in(normalize("to those of a B 1-2 Neighborhood")) == ["B1-2"]
     assert codes_in(normalize("an RM4 .5 Residential")) == ["RM-4.5"]
     assert codes_in(normalize("an RIMS Residential")) == ["RM-5"]
+    assert codes_in(normalize("a DX-s Downtown")) == ["DX-5"] and codes_in(normalize("a DX-S Downtown")) == ["DX-5"]
+    assert codes_in(normalize("an RME Residential Multi-Unit")) == ["RM-6"]
     assert "to those of an M2-2" in normalize("to those an M2-2")
 
 

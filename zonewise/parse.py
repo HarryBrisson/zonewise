@@ -60,7 +60,7 @@ CODE = re.compile(
     rf"\b(?P<cls>RS|RT|RM|B[123]|C[123]|D[CXRS]|M[123]|POS)\s?[-–—]?\s?(?P<suf>{SUFFIX})(?![\d.]*\d)"
     r"|\b(?P<pmd>P\.?\s?M\.?\s?D\.?|Planned\s+Manufacturing\s+District)\b(?:\s*(?:No\.?|Number|#)\s*(?P<pmdn>\d+[A-Z]?))?"
     r"|(?P<pd>\bP\S{0,2}an\S{0,3}ed\s+Dev\S{2,10}|\bP\.?\s?D\.?\b)(?:\s*(?:No\.?|Number|#)?\s*(?P<pdn>\d+)\b)?"
-    r"|\b(?P<t>T)\s+Transportation\s+District",
+    r"|\b(?P<t>T)\s+\(?Transportation\)?\s+District",  # "T Transportation" / "T (Transportation) District"
     re.I,
 )
 _VALID = {
@@ -322,6 +322,10 @@ def run_parse(*, use_llm: bool = False) -> list[dict[str, Any]]:
     for record in read_jsonl(ATTACHMENT_TEXT):
         texts[record["matter_id"]].append(record)
     agenda = agenda_items()
+    from .journal import passed_reads
+
+    journal = passed_reads({r["matterId"]: app_number(r.get("title") or "") for r in rows})
+    log(f"parse: {len(journal)} Journal of Proceedings reads")
     log(f"parse: {len(rows)} matters, {len(details)} details, {len(texts)} with ordinance text, {len(agenda)} agenda app keys")
 
     out: list[dict[str, Any]] = []
@@ -351,6 +355,16 @@ def run_parse(*, use_llm: bool = False) -> list[dict[str, Any]]:
             if reads[name]:
                 method, chosen = f"regex_{name}", reads[name]
                 break
+        # a substitute ordinance is on file but didn't read: what we read is the as-introduced
+        # original or the committee's request. The Journal prints the text as passed, so it wins.
+        substitute_unread = (any(is_substitute(d.get("file_name")) for d in docs)
+                             and not any(is_substitute(d.get("file_name")) for d, _ in ordinance_reads))
+        passed_read = journal.get(row["matterId"]) if substitute_unread else None
+        superseded = ""
+        if passed_read:
+            superseded = f"{'+'.join(chosen['from'])}>{'>'.join(chosen['chain'])}" if chosen else ""
+            from_codes = passed_read["from"] or (chosen["from"] if chosen else [])  # OCR can drop the from-clause; a substitute rarely changes it
+            method, chosen = "journal", {**passed_read, "from": from_codes}
 
         address = zoning_address(title)
         address_source = "title"
@@ -384,8 +398,11 @@ def run_parse(*, use_llm: bool = False) -> list[dict[str, Any]]:
             # which PDF the ordinance reading came from, and whether a substitute ordinance (the text
             # that passed when the matter "Passed as Substitute") is on file but didn't read
             "ordinance_file": ordinance_reads[0][0].get("file_name") or "" if ordinance_reads else "",
-            "substitute_unread": any(is_substitute(d.get("file_name")) for d in docs)
-                                 and not any(is_substitute(d.get("file_name")) for d, _ in ordinance_reads),
+            "substitute_unread": substitute_unread,
+            # parse_method "journal": the reading it replaced, and where the passed text is printed
+            "superseded_reading": superseded,
+            "journal_page": passed_read["journal_page"] if passed_read else "",
+            "journal_pdf": passed_read["journal_pdf"] if passed_read else "",
             "ordinance_snippet": (chosen or {}).get("snippet", "")[:400] if chosen else (full and _flat(full)[:300]),
             "url": f"{CLERK_SITE}/Matter/?matterId={row['matterId']}",
         })
