@@ -114,8 +114,11 @@ def _num(value: str) -> float | None:
 
 def reconcile(row: dict[str, str], m: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]]:
     """Check our parsed districts against the City zoning map's polygons for this ordinance.
-    The map is the City's own record of what passed, so where it disagrees, or where we parsed
-    nothing, its dominant (largest-area) class becomes the to-district; the parsed value is kept."""
+    Where we parsed nothing, or read only a request (agenda, application, the as-introduced text of
+    an ordinance that passed as a substitute), or missed a PD step, the map's dominant
+    (largest-area) class becomes the to-district; the parsed value is kept in parsed_to_district.
+    Where the passed ordinance text itself disagrees, the text stands (the Journal of Proceedings
+    backs it in 37 of 38 adjudicated conflicts) and map_check flags it."""
     from .citymap import map_to_code, norm_class
 
     info: dict[str, Any] = {"map_check": None, "district_source": "parsed" if row["to_district"] else None,
@@ -151,8 +154,14 @@ def reconcile(row: dict[str, str], m: dict[str, str]) -> tuple[dict[str, str], d
             # a committee "Change Request" or application form is the request, the map is the result
             info["district_source"] = "city_map_override"
             row.update(to_district=dominant, district_chain=dominant)
-        # else: the ordinance text and the map conflict (substitute, later change, stale tag):
-        # keep the ordinance reading and leave the flag for review
+        elif row.get("substitute_unread") == "True":
+            # the matter passed as a substitute we couldn't read, so our reading is the ordinance as
+            # introduced: a request again. The Journal of Proceedings sided with the map in 13 of 13
+            # such conflicts (data/review/journal_adjudication.csv)
+            info["district_source"] = "city_map_substitute"
+            row.update(to_district=dominant, district_chain=dominant)
+        # else: the passed ordinance text and the map conflict. The Journal sided with the text in
+        # 37 of 38 (the map's tag is stale or a later change kept it): keep it and leave the flag
     if m.get("map_from_class") and row["from_districts"] and info["district_source"] != "city_map+prior_snapshot":
         info["map_from_check"] = norm_class(m["map_from_class"]) in {norm_class(c) for c in row["from_districts"].split("+")}
     return row, info
@@ -257,7 +266,8 @@ def spec(first_full: int, as_of: str) -> dict[str, Any]:
     years = [first_full, date.today().year]
     method_tail = ("Ordinances come from the City Clerk's eLMS (matterCategory ZONING RECLASSIFICATIONS); from/to "
                    "districts are read from each ordinance PDF (OCR where scanned) or the Zoning Committee agenda, "
-                   "checked against (and, for missed PD steps, completed from) the City's zoning-district map, placed at the "
+                   "checked against (and, for missed PD steps or where only a request was readable, completed from) the City's "
+                   "zoning-district map, placed at the "
                    "rezoned map polygon (else the Census geocoder), and counted in the calendar year the City Council passed them.")
     common = {"time_field": "passed_date", "years": years}
     governance, housing = {"category": "good_governance"}, {"category": "material_wellbeing"}
@@ -266,9 +276,11 @@ def spec(first_full: int, as_of: str) -> dict[str, Any]:
         "source": "zonewise",
         "source_url": SOURCE_URL,
         "caveat": ("Pre-2023 ordinances were migrated from Legistar; their district codes come from OCR of scanned "
-                   "PDFs. Districts are the change as written in the ordinance or committee agenda; a substitute "
-                   "ordinance can differ. Ward values use today's ward map, not the map in force when it passed. Of the rezonings "
-                   "matched to the City zoning map, 97.6% agree with it; conflicts with the ordinance text are kept and flagged (map_check)."),
+                   "PDFs. Districts are the change as written in the ordinance or committee agenda; where only the "
+                   "as-introduced text of a substitute ordinance was readable, the City map's district is used. Ward values use "
+                   "today's ward map, not the map in force when it passed. Of the rezonings matched to the City zoning map, "
+                   "97.7% agree with it; conflicts with the passed ordinance text are kept as the text reads (the Council's "
+                   "Journal of Proceedings backs the text in 37 of 38 checked) and flagged (map_check)."),
         "coverage": {"first_full_year": first_full, "as_of": as_of},
         "layers": {
             "rezonings": {"file": "rezonings.geojson", "kind": "points",

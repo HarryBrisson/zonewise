@@ -100,9 +100,9 @@ from zonewise.build import reconcile  # noqa: E402
 from zonewise.citymap import map_to_code, norm_class  # noqa: E402
 
 
-def _rez(froms, chain, method="regex_ordinance"):
+def _rez(froms, chain, method="regex_ordinance", substitute_unread=False):
     return {"from_districts": froms, "district_chain": chain, "to_district": chain.split(">")[-1] if chain else "",
-            "parse_method": method}
+            "parse_method": method, "substitute_unread": str(substitute_unread)}
 
 
 def _map(classes, snapshot="current", dominant=None, from_class=""):
@@ -133,6 +133,31 @@ def test_reconcile_keeps_ordinance_text_on_conflict():
 def test_reconcile_map_beats_agenda_request():
     row, info = reconcile(_rez("B3-1", "B3-2", method="regex_agenda"), _map("B3-3"))
     assert info["district_source"] == "city_map_override" and row["to_district"] == "B3-3"
+
+
+def test_reconcile_map_beats_as_introduced_text_of_a_substitute():
+    # SO2016-5580: the substitute PDF didn't read, the original said C1-1; the Journal and the map say B1-1
+    row, info = reconcile(_rez("RS-3", "C1-1", substitute_unread=True), _map("B1-1"))
+    assert info["district_source"] == "city_map_substitute" and row["to_district"] == "B1-1"
+    assert info["parsed_to_district"] == "C1-1" and info["map_check"] == "disagrees"
+    # …but never from the weak 2014 date match, and never when the substitute itself was read
+    row, info = reconcile(_rez("RS-3", "C1-1", substitute_unread=True), _map("B1-1", snapshot="2014-09"))
+    assert row["to_district"] == "C1-1"
+    row, info = reconcile(_rez("RS-3", "C1-1"), _map("B1-1"))
+    assert info["district_source"] == "parsed" and row["to_district"] == "C1-1"
+
+
+def test_ordinance_to_clause_tolerates_ocr_and_typos():
+    # SO2011-1472's substitute: "to those o f a" (OCR); the Journal's SO2011-5141: "to those an"
+    head = ("SECTION 1. Title 17 of the Municipal Code of Chicago, the Chicago Zoning Ordinance, is hereby amended by "
+            "changing all the RMS Residential Multi-Unit District symbols and indications as shown on Map No. 10-E in the "
+            "area bounded by: East Pershing Road; ")
+    assert read_ordinance(head + "to those o f a B3-1 Community Shopping District, and a corresponding")["to"] == "B3-1"
+    assert read_ordinance(head + "to those an M2-2 Light Industry District.")["to"] == "M2-2"
+    assert read_ordinance(head + "to those ofa C1-2 Neighborhood Commercial District.")["to"] == "C1-2"
+    # O2011-4297: "RM5-5" is no district; the only reading is RM-5.5 (the map's and the Journal's)
+    assert codes_in("RM5-5 Residential Multi-Unit") == ["RM-5.5"] and codes_in("RM 4-5") == ["RM-4.5"]
+    assert codes_in("B1-5 Neighborhood Shopping") == ["B1-5"]
 
 
 def test_reconcile_fills_unparsed_but_not_from_weak_2014_match():

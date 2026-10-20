@@ -79,6 +79,7 @@ def ocr_fix(text: str) -> str:
         cls = ("B" if m.group(1) == "8" else m.group(1)) + m.group(2).translate(one)
         return f"{cls}-{m.group(3).translate(one)}"
     t = re.sub(r"\b([8BCM])([123lIL|!iZ])[\s,.]{0,2}-+\s?(1\.5|[lIL|Z]|\d)(?![\d.]*\d)", bcm, t)
+    t = re.sub(r"\b(RM\s?[456]|RT\s?3)\s?-\s?5\b(?![.\d])", r"\1.5", t)  # typed "RM5-5" (no such district) = RM-5.5
     t = re.sub(r"\bP[O0]S\s?-\s?[lIL|1]\b", "POS-1", t, flags=re.I)
     t = re.sub(r"\bR([STM])\s?-\s?Z\b", r"R\1-2", t)
     t = re.sub(r"\bR([TM])\s?-\s?s\b", r"R\1-5", t)
@@ -150,7 +151,8 @@ def _flat(text: str) -> str:
 
 
 ORD_FROM = re.compile(r"chang(?:ing|e)\s+a[lIHU1]{1,2}\s*(?:of\s*)?(?:the\s+)?(?P<from>.{2,500}?)\s+(?:as\s+shown|shown\s+on|on\s+(?:Zoning\s+)?Map|in\s+the\s+area\s+bounded)", re.I)
-ORD_TO = re.compile(r"\bto\s+(?:those\s+of|that\s+of|the\s+designation\s+of)\s*(?:an?\b|the\b)?\s*(?P<to>.{2,220}?)(?:\.\s|;|\bSECTION\b|\bwhich\b|\band\s+a\s+corresponding\b|$)", re.I)
+# "to those o f a B3-1" (OCR) and "to those an M2-2" (the Journal's dropped "of") are the same clause
+ORD_TO = re.compile(r"\bto\s+(?:those\s+(?:o\s?f|(?=an?\s))|that\s+o\s?f|the\s+designation\s+of)\s*(?:an?\b|the\b)?\s*(?P<to>.{2,220}?)(?:\.\s|;|\bSECTION\b|\bwhich\b|\band\s+a\s+corresponding\b|$)", re.I)
 
 
 def read_ordinance(text: str) -> dict[str, Any] | None:
@@ -336,8 +338,9 @@ def run_parse(*, use_llm: bool = False) -> list[dict[str, Any]]:
         # each document on its own (substitute first): concatenating an original and its
         # substitute would splice two different "to those of" clauses into one chain
         doc_texts = ["\n".join(d.get("pages") or []) for d in docs]
+        ordinance_reads = [(d, r) for d, r in zip(docs, map(read_ordinance, doc_texts)) if r]
         reads: dict[str, dict[str, Any] | None] = {
-            "ordinance": next((r for r in map(read_ordinance, doc_texts) if r), None),
+            "ordinance": ordinance_reads[0][1] if ordinance_reads else None,
             "application": next((r for r in map(read_application, doc_texts) if r), None)}
         house = re.match(r"\d+", zoning_address(title)["lookup"]) if zoning_address(title) else None
         agenda_hits = [a for a in agenda.get(app or "", []) + agenda.get(row.get("recordNumber") or "", [])
@@ -378,6 +381,11 @@ def run_parse(*, use_llm: bool = False) -> list[dict[str, Any]]:
             "address_lookup": address["lookup"] if address else "",
             "address_source": address_source,
             "ordinance_text_method": "+".join(sorted({d.get("method", "") for d in docs})),
+            # which PDF the ordinance reading came from, and whether a substitute ordinance (the text
+            # that passed when the matter "Passed as Substitute") is on file but didn't read
+            "ordinance_file": ordinance_reads[0][0].get("file_name") or "" if ordinance_reads else "",
+            "substitute_unread": any(is_substitute(d.get("file_name")) for d in docs)
+                                 and not any(is_substitute(d.get("file_name")) for d, _ in ordinance_reads),
             "ordinance_snippet": (chosen or {}).get("snippet", "")[:400] if chosen else (full and _flat(full)[:300]),
             "url": f"{CLERK_SITE}/Matter/?matterId={row['matterId']}",
         })
