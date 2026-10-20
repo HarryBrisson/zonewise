@@ -79,6 +79,7 @@ GEOJSON = json.dumps({"type": "FeatureCollection", "features": [
 def fake_portal(tmp_path, monkeypatch):
     monkeypatch.setattr(archive, "ARCHIVE", tmp_path)
     monkeypatch.setattr(archive, "MANIFEST", tmp_path / "manifest.jsonl")
+    monkeypatch.setattr(archive, "BUCKET", "")  # no S3 in tests
     state = {"updated": 1791900176, "body": GEOJSON, "downloads": 0}
     monkeypatch.setattr(archive, "get_json", lambda url, **_: {"rowsUpdatedAt": state["updated"]})
 
@@ -120,3 +121,71 @@ def test_refresh_refetches_only_new_or_changed_matter_details():
     details = {"a": {"status": "90-Final", "subStatus": "Passed"},
                "b": {"status": "10-Pending", "subStatus": "In Committee", "lastPublicationDate": "2026-10-01"}}
     assert stale_details(rows, details) == ["b", "c"]
+
+
+# ------------------------------------------------------------------------------------------------
+class FakeS3:
+    def __init__(self):
+        self.objects = {}
+
+    def get_paginator(self, _):
+        objects = self.objects
+
+        class Pages:
+            def paginate(self, Bucket, Prefix):
+                yield {"Contents": [{"Key": k} for k in objects if k.startswith(Prefix)]}
+
+        return Pages()
+
+    def get_object(self, Bucket, Key):
+        import io
+
+        return {"Body": io.BytesIO(self.objects[Key])}
+
+    def put_object(self, Bucket, Key, Body, **_):
+        self.objects[Key] = Body
+
+
+def test_s3_mirror_uploads_then_a_fresh_checkout_pulls_everything(fake_portal, tmp_path, monkeypatch):
+    s3 = FakeS3()
+    archive.archive_current_map(today="2026-10-19")
+    assert archive.sync_s3(s3, "b") == {"up": 1, "down": 0}
+    assert set(s3.objects) == {"city_zoning_archive/dj47-wfun_2026-10-19.geojson.gz", "city_zoning_archive/manifest.jsonl"}
+    assert archive.sync_s3(s3, "b") == {"up": 0, "down": 0}  # idempotent
+
+    fresh = tmp_path / "fresh"
+    monkeypatch.setattr(archive, "ARCHIVE", fresh)
+    monkeypatch.setattr(archive, "MANIFEST", fresh / "manifest.jsonl")
+    assert archive.sync_s3(s3, "b") == {"up": 0, "down": 1}
+    assert [c["date"] for c in archive.archived_copies()] == ["2026-10-19"]
+    assert archive.archive_current_map(today="2026-11-02") is None  # history came along, so unchanged = skip
+
+
+def test_s3_mirror_merges_manifests_from_both_sides(fake_portal, tmp_path):
+    s3 = FakeS3()
+    remote = {"dataset": "dj47-wfun", "date": "2026-09-01", "path": None, "sha256": "x", "rows": 1,
+              "rows_updated_at": 1, "fetched_at": "2026-09-01T12:00:00Z"}
+    s3.objects["city_zoning_archive/manifest.jsonl"] = (json.dumps(remote) + "\n").encode()
+    archive.archive_current_map(today="2026-10-19")
+    archive.sync_s3(s3, "b")
+    local = [json.loads(line)["date"] for line in (tmp_path / "manifest.jsonl").read_text().splitlines()]
+    pushed = [json.loads(line)["date"] for line in s3.objects["city_zoning_archive/manifest.jsonl"].decode().splitlines()]
+    assert local == pushed == ["2026-09-01", "2026-10-19"]
+
+
+def test_docx_ordinance_text(monkeypatch):
+    import io
+    import zipfile
+
+    from zonewise import elms
+
+    xml = ('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+           '<w:p><w:r><w:t>SECTION 1. ... changing all the RS-3 Residential </w:t></w:r><w:r><w:t>Single-Unit</w:t></w:r></w:p>'
+           '<w:p><w:r><w:t>to those of an RM-5 Residential Multi-Unit District</w:t></w:r></w:p></w:body></w:document>')
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        z.writestr("word/document.xml", xml)
+    monkeypatch.setattr(elms, "http_get", lambda url, **_: buffer.getvalue())
+    result = elms.docx_text("https://example.test/o.docx")
+    assert result["method"] == "docx"
+    assert result["pages"] == ["SECTION 1. ... changing all the RS-3 Residential Single-Unit\nto those of an RM-5 Residential Multi-Unit District"]

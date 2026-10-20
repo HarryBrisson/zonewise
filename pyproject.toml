@@ -8,6 +8,7 @@ license = { text = "MIT" }
 dependencies = []
 [project.optional-dependencies]
 ocr = ["pyobjc-framework-Vision>=10"]  # macOS Vision OCR for scanned ordinance PDFs
+archive = ["boto3"]  # S3 mirror of the zoning-map archive
 dev = ["pytest>=7"]
 [tool.setuptools]
 packages = ["zonewise"]

@@ -206,6 +206,24 @@ def pdf_text(url: str, *, text_pages: int, ocr_pages: int, prefix: bool = True) 
             "page_count": count, "method": method, "pages": pages}
 
 
+def docx_text(url: str) -> dict[str, Any]:
+    """A Word ordinance (a few 2026 matters attach only a .docx): the paragraphs of
+    word/document.xml, one per line, as a single page. Same record shape as pdf_text."""
+    import io
+    import zipfile
+    from xml.etree import ElementTree
+
+    body = http_get(url, timeout=180, accept="*/*")
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    root = ElementTree.fromstring(zipfile.ZipFile(io.BytesIO(body)).read("word/document.xml"))
+    lines = ["".join(t.text or "" for t in para.iter(f"{ns}t")) for para in root.iter(f"{ns}p")]
+    return {"sha256": hashlib.sha256(body).hexdigest(), "bytes": len(body), "total_bytes": len(body),
+            "page_count": None, "method": "docx", "pages": ["\n".join(lines)]}
+
+
+IMAGE = re.compile(r"\.(png|jpe?g|gif|tiff?)$", re.I)  # parcel pictures filed as "Legislation"
+
+
 def legislation_attachments(detail: dict[str, Any]) -> list[dict[str, Any]]:
     """The ordinance PDF(s): attachmentType 'Legislation'; else any file named like an ordinance."""
     files = detail.get("attachments") or []
@@ -229,7 +247,7 @@ def fetch_attachment_text(details: dict[str, dict[str, Any]], matter_ids: list[s
     for m in matter_ids:
         files = sorted(legislation_attachments(details.get(m) or {}), key=lambda a: not is_substitute(a.get("fileName")))
         for i, a in enumerate(files):
-            if (m, a["path"]) not in have:
+            if (m, a["path"]) not in have and not IMAGE.search(a.get("fileName") or a["path"]):
                 (first if i == 0 else rest).append((m, a))
     jobs = first + rest
     log(f"attachment text: {len(have)} cached, {len(jobs)} to fetch")
@@ -237,7 +255,10 @@ def fetch_attachment_text(details: dict[str, dict[str, Any]], matter_ids: list[s
     def one(job: tuple[str, dict[str, Any]]) -> None:
         matter_id, attachment = job
         try:
-            result = pdf_text(attachment["path"], text_pages=TEXT_PAGES, ocr_pages=OCR_PAGES)
+            if re.search(r"\.docx$", attachment.get("fileName") or attachment["path"], re.I):
+                result = docx_text(attachment["path"])
+            else:
+                result = pdf_text(attachment["path"], text_pages=TEXT_PAGES, ocr_pages=OCR_PAGES)
         except Exception as error:  # noqa: BLE001 - record and move on; rerun retries errors
             log(f"  {matter_id} {attachment.get('fileName')}: {type(error).__name__}: {error}")
             return

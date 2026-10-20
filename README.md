@@ -120,7 +120,8 @@ This is the monthly job. It runs, in order:
    `elms_meetings.jsonl`. Later rows win, and nothing is deleted. It then fetches details only for
    matters that are new or whose list row changed (`status`, `subStatus`, `finalActionDate`,
    `lastPublicationDate`), such as a pending matter that has now passed. Ordinance PDFs and
-   agendas are read only when they aren't cached yet. Workers are capped at 6, and HTTP 429 backs
+   agendas are read only when they aren't cached yet. A few 2026 matters attach only a Word
+   ordinance, which is read from its XML (`method: docx`). Image attachments are skipped. Workers are capped at 6, and HTTP 429 backs
    off exponentially.
 2. **`archive`.** Checks `rowsUpdatedAt` on the portal's metadata for `dj47-wfun`
    (`/api/views/dj47-wfun.json`). If it has changed since the last copy, the step downloads
@@ -135,8 +136,14 @@ This is the monthly job. It runs, in order:
 It is idempotent and resumable. Every fetch checks its append-only cache first, so rerunning after
 a crash or a 429 storm picks up where the last run stopped, and a second run in a month re-pages
 the lists and does nothing else. A lock (`data/raw/.refresh.lock`) stops two runs overlapping.
-`data/raw/` is gitignored, so the archive lives on this machine only. **Back it up**: unlike
-everything else in `data/raw/`, it cannot be refetched.
+Unlike everything else in `data/raw/` (gitignored), the archive can't be refetched, so it is
+mirrored to **`s3://zonewise-archive/city_zoning_archive/`**: a private bucket with versioning on,
+so nothing in it is ever silently overwritten. Each archive step syncs both ways before and after
+it runs. Copies missing on either side are copied across after a check against the manifest
+sha256, and the two manifests are merged. A fresh checkout gets the whole history on its first
+refresh. If S3 is unreachable (no AWS credentials, say), the step logs `S3 mirror FAILED`, keeps
+the local copy and catches up on the next run. Set `ZONEWISE_ARCHIVE_BUCKET` to use another
+bucket, or set it empty to stay local-only. The mirror needs `boto3` (`pip install .[archive]`).
 
 **Schedule.** City Council meets monthly, so the job runs on the 2nd of each month. The launchd job
 is in [`ops/org.zagwa.zonewise.refresh.plist`](ops/org.zagwa.zonewise.refresh.plist) (07:00,
