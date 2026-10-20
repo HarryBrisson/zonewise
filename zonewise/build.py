@@ -356,7 +356,10 @@ def run_build() -> None:
     write_conflicts([i for i in placed if i["map_check"] == "disagrees" and i["district_source"] in ("parsed", "journal")
                      and i["map"].get("map_snapshot") != "2014-09"])
     earliest, first_full = coverage_years(items)
-    (LAYERS / "aggregation_spec.json").write_text(json.dumps(spec(first_full, date.today().isoformat()), indent=2) + "\n")
+    from .snapshot import merge_into_spec, read_as_of  # the current-map rasters, when built (snapshot stage)
+
+    full = merge_into_spec(spec(first_full, date.today().isoformat()), read_as_of())
+    (LAYERS / "aggregation_spec.json").write_text(json.dumps(full, indent=2) + "\n")
 
     n = len(items)
     log(f"build: {n} passed map amendments; {len(placed)} placed ({len(placed) / max(1, n):.1%}) by {dict(Counter(i['geocode_source'] for i in placed))}")

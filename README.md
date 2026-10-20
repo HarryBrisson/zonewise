@@ -3,7 +3,9 @@
 **Chicago rezonings as a byop/v1 measure source.** Every zoning map amendment the City Council
 passed, as a dated point. Each point carries its from- and to-district, whether it raised or
 lowered the allowed floor area, whether it newly allowed apartment buildings, and how much zoned
-floor area it added. It is a sibling of `rentrate` (points layers) and `sunscore` (full catalog
+floor area it added. Alongside the rezonings, it publishes the zoning map as it stands now as
+10 m rasters (share of land by district family, mean zoned FAR), dated to the map's download.
+It is a sibling of `rentrate` (points layers) and `sunscore` (full catalog
 fields), and is built for ward-wise-civic-tech / Penlight. The name `zonewise` is provisional.
 
 ## Coverage (built 2026-10-19)
@@ -142,7 +144,9 @@ This is the monthly job. It runs, in order:
    in that folder; the sha256 is of the uncompressed GeoJSON. When the content matches the
    previous copy, the line is written with `path: null` and no second file. A response of 50,000
    rows would mean it was cut off, so the step stops.
-3. **`all`.** Then parse → geocode → lots → citymap → build → sample, from the caches.
+3. **`all`.** Then parse → geocode → lots → citymap → snapshot → build → sample, from the caches.
+   `snapshot` re-rasterizes the newest archived map copy, so the current-map layers' `as_of`
+   moves to that copy's date.
 
 It is idempotent and resumable. Every fetch checks its append-only cache first, so rerunning after
 a crash or a 429 storm picks up where the last run stopped, and a second run in a month re-pages
@@ -189,7 +193,46 @@ The two share metrics use **subset layers**: only the rezonings whose answer is 
 `share` counts every point in its denominator, so a rezoning with an unknown FAR would otherwise
 count as "not an upzoning".
 
-The spec uses v1.1 fields: `time_field`, `years`, and `combine: sum`. A consumer has to support
+### The map as it stands (`snapshot`)
+
+Six more metrics describe the zoning map itself, not changes to it. Each is `combine: mean` over a
+**10 m raster in EPSG:3435** (`data/layers/zoned_*.tif`, float32, NaN = no data, deflate, ≈1 MB
+each), built by `python -m zonewise snapshot` from the newest archived copy of `dj47-wfun`. Every
+layer carries `as_of` (byop v1.1) = that copy's archive date, **2026-10-19**, also stamped in the
+GeoTIFF tags (`AS_OF`, `SOURCE_SHA256`). History is not backfilled: each monthly copy is a reading
+of its own, so a series starts at 2026-10.
+
+| metric | layer | meaning |
+|---|---|---|
+| `zoned_single_family_only_pct` | `zoned_single_family` | % of zoned land in RS-1/2/3 (houses only; RS-3 also allows two-flats; no 3+ unit buildings) |
+| `zoned_multifamily_pct` | `zoned_multifamily` | % in RT/RM residential districts (3+ units by right) |
+| `zoned_business_commercial_pct` | `zoned_business_commercial` | % in B or C districts |
+| `zoned_manufacturing_pct` | `zoned_manufacturing` | % in M districts or Planned Manufacturing Districts |
+| `zoned_planned_development_pct` | `zoned_planned_development` | % in Planned Developments |
+| `zoned_far_mean` | `zoned_max_far` | area-weighted mean max FAR (`data/districts.csv`; bonuses not included) |
+
+The five class rasters are 1/0 inside the map and NaN off it, so × 100 the mean is the share of
+**zoned land**: downtown (D), parks (POS) and transportation (T) districts are in the base and in
+none of the five. Map polygons run to street and alley centrelines, so zoned land includes half the
+surrounding streets. The FAR raster is NaN where the district sets no FAR of its own: Planned
+Developments (14% of the city), parks and a PMD without a subdistrict number. So in a PD-heavy
+area, `zoned_far_mean` describes only the land outside its PDs. Cells take the district at their
+centre; per-ward values match an exact polygon overlay to within 0.05 points.
+
+Citywide (2026-10-19 copy, 599 km² zoned): single-family-only 40.2%, multifamily 11.2%,
+business/commercial 9.3%, manufacturing/PMD 16.2%, PD 14.2%, mean FAR 1.50. A few wards (2023 map),
+as Penlight's raster aggregator computes them:
+
+| ward | single-family-only | multifamily | PD | mean FAR |
+|---|---|---|---|---|
+| 19 (Beverly, Mount Greenwood) | 81.9% | 4.1% | 2.8% | 0.68 |
+| 23 (Garfield Ridge, Clearing) | 67.7% | 1.5% | 5.1% | 0.93 |
+| 1 (Wicker Park, Ukrainian Village) | 32.4% | 36.1% | 6.0% | 1.37 |
+| 41 (Edison Park, O'Hare) | 26.0% | 1.8% | 63.9% (the airport) | 0.75 |
+| 43 (Lincoln Park) | 0.3% | 46.4% | 11.3% | 2.12 |
+| 42 (the Loop, Streeterville) | 0.0% | 0.0% | 46.8% | 11.09 |
+
+The spec uses v1.1 fields: `time_field`, `years`, `combine: sum` and layer `as_of`. A consumer has to support
 them before this source is released (see ward-wise-measures `CONTRACT.md`, "Time").
 
 ## Layer properties (`rezonings.geojson`)
@@ -217,6 +260,7 @@ A field is `null` when it isn't known. Nothing is guessed.
 | Points | The interior point of the rezoned map polygon; otherwise the **US Census Bureau batch geocoder** (`Public_AR_Current`), with the request format copied from ward-wise-civic-tech `census_geocode.py`. When the Census geocoder misses but the address matched parcels, the fallback is the parcel centroid from **Cook County Assessor Parcel Universe** (`pabr-t5kh`). |
 | Lot area | **ccgisdata Parcel 2021** (`77tz-riq7`): parcels whose centroid falls inside the rezoned map polygon(s) of the final district. Fallback: **Cook County Assessor Parcel Addresses** (`3723-97qp`, tax year 2025) gives address → PIN. **ccgisdata Parcel 2021** (`77tz-riq7`) polygons give PIN → area. Parcel Universe has no land-area field. |
 | Passed text | City Council **Journal of the Proceedings** PDFs (chicityclerk.com, taxonomy term 16), read at the page eLMS cites for the "Passed" action. Districts for substitutes whose PDF didn't read; adjudicates map conflicts; spot-check. Not read for every matter. |
+| Current-map rasters | The newest archived copy of **`dj47-wfun`** (`data/raw/city_zoning_archive/`), rasterized at 10 m. |
 | District → FAR, multifamily | `data/districts.csv`. It is version-controlled, and every row cites its Chicago Zoning Ordinance (Municipal Code Title 17) section from the American Legal Publishing text, current through at least Coun. J. 10-16-25. |
 
 ## Method

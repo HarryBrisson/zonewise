@@ -7,11 +7,12 @@
   geocode   Census batch geocoder → data/raw/census_geocode.jsonl
   lots      Cook County parcel addresses + 2021 polygons → lot area cache
   citymap   join to the City zoning map (current + our archived copies + 2012/2014/2015 snapshots)
-  build     data/layers/rezonings*.geojson + aggregation_spec.json
+  snapshot  the newest archived City zoning map → data/layers/zoned_*.tif (10 m rasters, as_of = archive date)
+  build     data/layers/rezonings*.geojson + aggregation_spec.json (+ the snapshot rasters' layers, when built)
   journal   read the City Council Journal (the passed text) for every ordinance-vs-map conflict
             + a random sample the map can't check → data/review/journal_adjudication.csv
   sample    print a random spot-check sample (default 20)
-  all       parse → geocode → lots → citymap → build → sample (fetch is separate: it is the slow one)
+  all       parse → geocode → lots → citymap → snapshot → build → sample (fetch is separate: it is the slow one)
   refresh   the monthly job: fetch --refresh → archive → all. Idempotent; rerun to resume.
 """
 
@@ -22,7 +23,7 @@ import argparse
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="zonewise")
-    parser.add_argument("stage", choices=["fetch", "archive", "parse", "geocode", "lots", "citymap", "build", "journal",
+    parser.add_argument("stage", choices=["fetch", "archive", "parse", "geocode", "lots", "citymap", "snapshot", "build", "journal",
                                           "sample", "all", "refresh"])
     parser.add_argument("--refresh", action="store_true", help="refetch the eLMS matter list and meetings")
     parser.add_argument("--workers", type=int, default=8, help="eLMS fetches are capped at 6 (it rate-limits)")
@@ -71,6 +72,13 @@ def run(args: argparse.Namespace, stage: str) -> None:
         from .citymap import run_citymap
 
         run_citymap(workers=args.workers)
+    if stage in ("snapshot", "all"):
+        from .snapshot import run_snapshot, update_spec
+
+        as_of = run_snapshot()
+        if stage == "snapshot":
+            update_spec(as_of)
+            return
     if stage in ("build", "all"):
         from .build import run_build
 
