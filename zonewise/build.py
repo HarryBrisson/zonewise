@@ -112,7 +112,54 @@ def _num(value: str) -> float | None:
         return None
 
 
+def reconcile(row: dict[str, str], m: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]]:
+    """Check our parsed districts against the City zoning map's polygons for this ordinance.
+    The map is the City's own record of what passed, so where it disagrees, or where we parsed
+    nothing, its dominant (largest-area) class becomes the to-district; the parsed value is kept."""
+    from .citymap import map_to_code, norm_class
+
+    info: dict[str, Any] = {"map_check": None, "district_source": "parsed" if row["to_district"] else None,
+                            "parsed_to_district": row["to_district"] or None, "map_from_check": None}
+    if not m.get("map_snapshot"):
+        return row, info
+    classes = {norm_class(c) for c in m["map_classes"].split("+") if c}
+    chain = [c for c in row["district_chain"].split(">") if c]
+    dominant = map_to_code(m["map_dominant_class"])
+    weak_match = m["map_snapshot"] == "2014-09"  # matched on date + proximity only: check, never fill
+    row = dict(row)
+    if not row["to_district"]:
+        info["map_check"] = "unparsed"
+        if not weak_match:
+            info["district_source"] = "city_map"
+            row.update(to_district=dominant, district_chain=dominant)
+            if m.get("map_from_class"):
+                row["from_districts"] = map_to_code(m["map_from_class"])
+                info["district_source"] = "city_map+prior_snapshot"
+    elif norm_class(row["to_district"]) in classes:
+        info["map_check"] = "agrees"
+    elif any(norm_class(c) in classes for c in chain):
+        info["map_check"] = "agrees_chain_step"  # e.g. we read B3-5>PD, the map shows B3-5
+    else:
+        info["map_check"] = "disagrees"
+        if weak_match:
+            pass
+        elif norm_class(dominant) == "PD" and not row["to_district"].startswith("PD"):
+            # a two-step ordinance whose PD step we missed: keep ours as the underlying district
+            info["district_source"] = "city_map_pd_step"
+            row.update(to_district=dominant, district_chain=f"{row['to_district']}>{dominant}")
+        elif row["parse_method"] != "regex_ordinance":
+            # a committee "Change Request" or application form is the request, the map is the result
+            info["district_source"] = "city_map_override"
+            row.update(to_district=dominant, district_chain=dominant)
+        # else: the ordinance text and the map conflict (substitute, later change, stale tag):
+        # keep the ordinance reading and leave the flag for review
+    if m.get("map_from_class") and row["from_districts"] and info["district_source"] != "city_map+prior_snapshot":
+        info["map_from_check"] = norm_class(m["map_from_class"]) in {norm_class(c) for c in row["from_districts"].split("+")}
+    return row, info
+
+
 def assemble() -> list[dict[str, Any]]:
+    from .citymap import OUT as MAP_JOIN, norm_class
     from .lots import LOTS, parcel_centroids
 
     table = load_districts()
@@ -120,14 +167,21 @@ def assemble() -> list[dict[str, Any]]:
             if r["status"] == "passed" and r["map_amendment"] == "True" and r["passed_date"]]
     points = cached_points()
     lots = {r["matter_id"]: r for r in csv.DictReader(LOTS.open())} if LOTS.exists() else {}
+    maps = {r["matter_id"]: r for r in csv.DictReader(MAP_JOIN.open())} if MAP_JOIN.exists() else {}
     need_centroid = {p for r in rows if not (points.get(clean_lookup(r["address_lookup"])) or {}).get("point")
                      for p in (lots.get(r["matter_id"], {}).get("pin10s") or "").split()}
     centroids = parcel_centroids(need_centroid) if need_centroid else {}
     out = []
     for row in rows:
-        geo = points.get(clean_lookup(row["address_lookup"])) or {}
-        point = geo.get("point") if in_chicago(geo.get("point")) else None  # "Chicago, IL" can still match a namesake street elsewhere
-        source = "census_batch" if point else ""
+        m = maps.get(row["matter_id"], {})
+        row, info = reconcile(row, m)
+        strong = m.get("map_snapshot") not in (None, "", "2014-09")  # 2014-09 matched on date + proximity only
+        if strong and m.get("map_lon"):  # the rezoned polygon's interior point beats the first address of the range
+            point, source = [float(m["map_lon"]), float(m["map_lat"])], f"city_zoning_map_{m['map_snapshot']}"
+        else:
+            geo = points.get(clean_lookup(row["address_lookup"])) or {}
+            point = geo.get("point") if in_chicago(geo.get("point")) else None  # "Chicago, IL" can still match a namesake street elsewhere
+            source = "census_batch" if point else ""
         lot = lots.get(row["matter_id"], {})
         if not point:
             pts = [centroids[p] for p in (lot.get("pin10s") or "").split() if p in centroids]
@@ -135,10 +189,16 @@ def assemble() -> list[dict[str, Any]]:
                 point = [round(sum(p[0] for p in pts) / len(pts), 7), round(sum(p[1] for p in pts) / len(pts), 7)]
                 source = "parcel_universe_centroid"
         c = classify(row, table)
-        lot_area = _num(lot.get("lot_area_sqft", ""))
+        by_class = json.loads(m["map_lot_area_by_class"]) if strong and m.get("map_lot_area_by_class") else {}
+        map_lot = sum(v for k, v in by_class.items() if norm_class(k) == norm_class(row["to_district"])) if row["to_district"] else 0
+        if map_lot:
+            lot_area, lot_source = float(map_lot), "parcels_in_city_zoning_polygon"
+        else:
+            lot_area = _num(lot.get("lot_area_sqft", ""))
+            lot_source = "parcels_at_address_range" if lot_area else None
         capacity = round(c["far_delta"] * lot_area) if c["far_delta"] is not None and lot_area else None
-        out.append({"row": row, "point": point, "geocode_source": source, "lot_area_sqft": lot_area,
-                    "capacity_sqft_delta": capacity, **c})
+        out.append({"row": row, "point": point, "geocode_source": source, "lot_area_sqft": lot_area, "lot_area_source": lot_source,
+                    "capacity_sqft_delta": capacity, "map": m, **info, **c})
     return out
 
 
@@ -159,6 +219,14 @@ def feature(item: dict[str, Any]) -> dict[str, Any]:
         "to_far_basis": item["to_far_basis"] or None,
         "capacity_sqft_delta": item["capacity_sqft_delta"],
         "lot_area_sqft": item["lot_area_sqft"],
+        "lot_area_source": item["lot_area_source"],
+        "district_source": item["district_source"],
+        "parsed_to_district": item["parsed_to_district"],
+        "map_check": item["map_check"],
+        "map_from_check": item["map_from_check"],
+        "map_snapshot": item["map"].get("map_snapshot") or None,
+        "map_zone_classes": item["map"].get("map_classes") or None,
+        "map_area_sqft": _num(item["map"].get("map_area_sqft", "")),
         "address": row["address"] or None,
         "matter_id": row["matter_id"],
         "record_number": row["record_number"],
@@ -189,7 +257,8 @@ def spec(first_full: int, as_of: str) -> dict[str, Any]:
     years = [first_full, date.today().year]
     method_tail = ("Ordinances come from the City Clerk's eLMS (matterCategory ZONING RECLASSIFICATIONS); from/to "
                    "districts are read from each ordinance PDF (OCR where scanned) or the Zoning Committee agenda, "
-                   "placed by the Census batch geocoder, and counted in the calendar year the City Council passed them.")
+                   "checked against (and, for missed PD steps, completed from) the City's zoning-district map, placed at the "
+                   "rezoned map polygon (else the Census geocoder), and counted in the calendar year the City Council passed them.")
     common = {"time_field": "passed_date", "years": years}
     governance, housing = {"category": "good_governance"}, {"category": "material_wellbeing"}
     return {
@@ -198,7 +267,8 @@ def spec(first_full: int, as_of: str) -> dict[str, Any]:
         "source_url": SOURCE_URL,
         "caveat": ("Pre-2023 ordinances were migrated from Legistar; their district codes come from OCR of scanned "
                    "PDFs. Districts are the change as written in the ordinance or committee agenda; a substitute "
-                   "ordinance can differ. Ward values use today's ward map, not the map in force when it passed."),
+                   "ordinance can differ. Ward values use today's ward map, not the map in force when it passed. Of the rezonings "
+                   "matched to the City zoning map, 97.6% agree with it; conflicts with the ordinance text are kept and flagged (map_check)."),
         "coverage": {"first_full_year": first_full, "as_of": as_of},
         "layers": {
             "rezonings": {"file": "rezonings.geojson", "kind": "points",
@@ -235,12 +305,29 @@ def spec(first_full: int, as_of: str) -> dict[str, Any]:
                 "label": "Zoned Capacity Added",
                 "description": "Net floor area that the year's rezonings added to what the zoning allows, in square feet per km².",
                 "methodology": ("Σ (new max FAR − old max FAR) × lot area over passed rezonings, per km². Lot area = Cook County 2021 "
-                                "parcel polygons for the PINs at the ordinance's address range (Assessor Parcel Addresses); "
+                                "parcels whose centroid lies in the rezoned City zoning-map polygon (else the parcels at the "
+                                "ordinance's address range); "
                                 f"rezonings with unknown FAR or lot area add nothing, so this is a floor. {method_tail}"),
                 **common, **housing},
         },
         "fixed_geography_metrics": {},
     }
+
+
+def write_conflicts(items: list[dict[str, Any]]) -> None:
+    """Ordinance text vs City map conflicts, kept as parsed, for a human to adjudicate."""
+    path = DATA / "review" / "map_conflicts.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["record_number", "passed_date", "address", "parsed_from", "parsed_to", "map_zone_classes",
+                         "map_snapshot", "parse_method", "url", "ordinance_snippet"])
+        for i in sorted(items, key=lambda i: i["row"]["passed_date"]):
+            r = i["row"]
+            writer.writerow([r["record_number"], r["passed_date"], r["address"], r["from_districts"], r["to_district"],
+                             i["map"].get("map_classes"), i["map"].get("map_snapshot"), r["parse_method"], r["url"],
+                             (r.get("ordinance_snippet") or "")[:300]])
+    log(f"  {len(items)} ordinance-vs-map conflicts → {path}")
 
 
 def run_build() -> None:
@@ -251,6 +338,8 @@ def run_build() -> None:
     write_geojson(LAYERS / "rezonings.geojson", features)
     write_geojson(LAYERS / "rezonings_far_known.geojson", [f for f in features if f["properties"]["far_delta"] is not None])
     write_geojson(LAYERS / "rezonings_use_known.geojson", [f for f in features if f["properties"]["to_multifamily"] is not None])
+    write_conflicts([i for i in placed if i["map_check"] == "disagrees" and i["district_source"] == "parsed"
+                     and i["map"].get("map_snapshot") != "2014-09"])
     earliest, first_full = coverage_years(items)
     (LAYERS / "aggregation_spec.json").write_text(json.dumps(spec(first_full, date.today().isoformat()), indent=2) + "\n")
 
@@ -261,6 +350,12 @@ def run_build() -> None:
     log(f"  upzoning {sum(bool(i['upzoning']) for i in items)}, downzoning {sum(bool(i['downzoning']) for i in items)}, "
         f"to_multifamily {sum(bool(i['to_multifamily']) for i in items)}, pd_or_pmd {sum(bool(i['pd_or_pmd']) for i in items)}")
     log(f"  passed by year: {sorted(Counter(i['row']['passed_date'][:4] for i in items).items())}")
+    log(f"  city map check: {dict(Counter(i['map_check'] or 'no_map_polygon' for i in items))}")
+    log(f"  city map check by snapshot: {dict(Counter((i['map'].get('map_snapshot') or '-', i['map_check'] or '-') for i in items))}")
+    log(f"  from-district vs prior snapshot: {dict(Counter(i['map_from_check'] for i in items if i['map_from_check'] is not None))}")
+    log(f"  district source: {dict(Counter(i['district_source'] for i in items))}; lot area source: {dict(Counter(i['lot_area_source'] for i in items))}")
+    checked = Counter((i['row']['passed_date'][:4], bool(i['map_check'])) for i in items)
+    log(f"  share checked against a City map, by year: {[(y, round(checked[(y, True)] / (checked[(y, True)] + checked[(y, False)]), 2)) for y in sorted({k[0] for k in checked})]}")
     log(f"  earliest passed year {earliest}; first full year {first_full} → spec years [{first_full}, {date.today().year}]")
     unknown = Counter(c for i in items for c in (i["row"]["from_districts"].split("+") + [i["row"]["to_district"]])
                       if c and lookup(c, load_districts()) is None)

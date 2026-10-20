@@ -1,63 +1,63 @@
 
-Spot-check sample: 20 of 5714 placed passed rezonings (seed 20261019)
+Spot-check sample: 20 of 5773 placed passed rezonings (seed 20261019)
 
- 1. 2011-05-04 O2011-1471      unknown       4355 N Linder Ave                         
+ 1. 2011-04-13 O2011-851       unknown       2416-2422 W Addison St                    
+    B2-3 → RS-3                              FAR 3.0 → 0.9 (district_table)  Δ -2.1 [-]  lot 12146.0  cap -25507  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=E92EA6B3-DF0D-ED11-82E3-001DD80693B4
+ 2. 2011-05-04 O2011-1471      unknown       4355 N Linder Ave                         
     B3-1 → RT-4                              FAR 1.2 → 1.2 (district_table)  Δ 0.0 [0]  lot 37528.0  cap 0  mf False  via regex_ordinance
     https://chicityclerkelms.chicago.gov/Matter/?matterId=86779EB9-DF0D-ED11-82E3-001DD80693B4
- 2. 2011-12-14 O2011-8871      map_amendment 2714 S Lowe Ave                           
-    RS-3 → RM-4.5                            FAR 0.9 → 1.7 (district_table)  Δ 0.8 [+]  lot 2983.0  cap 2386  mf True  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=104F77DD-DF0D-ED11-82E3-001DD80693B4
- 3. 2013-10-16 O2013-6084      map_amendment 4609-4639 S Wabash Ave                    
-    B3-3+B3-2+RM-5 → B2-3                    FAR 2.4 → 3.0 (district_table)  Δ 0.6 [+]  lot None  cap None  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=B4DCE62A-E00D-ED11-82E3-001DD80698CB
- 4. 2015-03-18 O2014-9816      unknown       3617-3619 N Sheffield Ave                 
-    B3-3 → RT-4                              FAR 3.0 → 1.2 (district_table)  Δ -1.8 [-]  lot 7913.0  cap -14243  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=C94344AF-E00D-ED11-82E3-001DD80693B4
- 5. 2015-09-24 O2015-5312      map_amendment 4219 S California Ave                     
-    RS-3 → RT-4                              FAR 0.9 → 1.2 (district_table)  Δ 0.3 [+]  lot 3756.0  cap 1127  mf True  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=914D22CC-E00D-ED11-82E3-001DD80698CB
- 6. 2016-11-16 SO2016-3917     type_1        2556-2560 W Armitage Ave                  
-    B3-1 → B2-3                              FAR 1.2 → 3.0 (district_table)  Δ 1.8 [+]  lot 9228.0  cap 16610  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=CF3802F0-E00D-ED11-82E3-001DD80698CB
- 7. 2017-01-25 SO2016-6325     map_amendment 4600 N Clarendon Ave                      
-    PD → PD                                  FAR None → None (-)  Δ None [?]  lot 22058.0  cap None  mf None  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=04B5F2FC-E00D-ED11-82E3-001DD80693B4
- 8. 2017-06-28 SO2017-2183     map_amendment 5438-5458 N Sheridan Rd                   
-    PD-1056 → PD-1056                        FAR None → None (-)  Δ None [?]  lot 22239.0  cap None  mf None  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=9079DD13-E10D-ED11-82E3-001DD80698CB
- 9. 2017-12-13 O2017-7764      type_1        4737-4739 N Pulaski Rd                    
-    B1-1 → C2-1                              FAR 1.2 → 1.2 (district_table)  Δ 0.0 [0]  lot 6154.0  cap 0  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=5686BD38-E10D-ED11-82E3-001DD80693B4
-10. 2018-10-31 SO2018-7752     map_amendment 360 W Illinois St                         
-    PD-624 → DX-7>PD                         FAR None → 7.0 (pd_underlying_district)  Δ None [?]  lot 91944.0  cap None  mf None  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=1DA15997-E10D-ED11-82E3-001DD80698CB
-11. 2019-09-18 O2019-5674      map_amendment 2725 W Potomac St                         
-    RS-3 → RM-4.5                            FAR 0.9 → 1.7 (district_table)  Δ 0.8 [+]  lot 2987.0  cap 2390  mf True  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=E3B72AC1-E10D-ED11-82E3-001DD80698CB
-12. 2019-12-18 O2019-6854      map_amendment 5535-5555 W Irving Park Rd                
-    B3-1 → C2-1                              FAR 1.2 → 1.2 (district_table)  Δ 0.0 [0]  lot 31412.0  cap 0  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=ECFC22C7-E10D-ED11-82E3-001DD80698CB
-13. 2020-12-16 O2020-4726      aldermanic    63-79 E 63rd Pl                           
-    RT-3.5+B3-3+C1-3 → RM-5                  FAR 2.35 → 2.0 (district_table)  Δ -0.35 [-]  lot 193358.0  cap -67675  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=25F393F2-E10D-ED11-82E3-001DD80693B4
-14. 2020-12-16 O2020-4815      type_1        2700 N Pine Grove Ave                     
-    RM-5 → RM-6                              FAR 2.0 → 4.4 (district_table)  Δ 2.4 [+]  lot None  cap None  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=924BEFF0-E10D-ED11-82E3-001DD80698CB
-15. 2021-10-14 O2021-3724      aldermanic    1540 W North Ave                          
-    C1-2 → B1-2                              FAR 2.2 → 2.2 (district_table)  Δ 0.0 [0]  lot 3103.0  cap 0  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=94C96F10-E20D-ED11-82E3-001DD80693B4
-16. 2022-06-22 O2021-4633      map_amendment 512-528 S California Ave                  
-    B2-3 → C1-1                              FAR 3.0 → 1.2 (district_table)  Δ -1.8 [-]  lot 26971.0  cap -48548  mf False  via regex_agenda
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=1715C814-E20D-ED11-82E3-001DD80698CB
-17. 2022-10-26 SO2022-2806     type_1        1319                                      
-    (unparsed)                               FAR None → None (-)  Δ None [?]  lot 8590.0  cap None  mf None  via none
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=8A3F2A60-23F4-ED11-A7C6-001DD806ACE0
-18. 2022-12-14 O2022-3371      map_amendment 1361 W Chicago Ave                        
-    B1-2 → B2-3                              FAR 2.2 → 3.0 (district_table)  Δ 0.8 [+]  lot 2206.0  cap 1765  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=3B422A60-23F4-ED11-A7C6-001DD806ACE0
-19. 2025-10-16 O2025-0019491   type_1        2603 S Halsted St                         
-    M1-2 → B3-3                              FAR 2.2 → 3.0 (district_table)  Δ 0.8 [+]  lot 2985.0  cap 2388  mf True  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=2413A6D5-4E8F-F011-B4CB-001DD806BC4F
-20. 2026-10-14 O2026-0028345   type_1        2400 W Grenshaw St                        
-    C1-2 → B2-3                              FAR 2.2 → 3.0 (district_table)  Δ 0.8 [+]  lot 2838.0  cap 2270  mf False  via regex_ordinance
-    https://chicityclerkelms.chicago.gov/Matter/?matterId=6E25D182-1AB1-F111-AAAC-001DD803894A
+ 3. 2013-10-16 O2013-6077      map_amendment 8000 S Dr. Martin L. King Jr. Dr          
+    B3-2 → C2-2                              FAR 2.2 → 2.2 (district_table)  Δ 0.0 [0]  lot 14883.0  cap 0  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=DD6E1C2B-E00D-ED11-82E3-001DD80693B4
+ 4. 2015-01-21 O2014-9711      map_amendment 6019-6021 W Lawrence Ave                  
+    RS-2+B2-3 → RT-4                         FAR 1.825 → 1.2 (district_table)  Δ -0.625 [-]  lot 27652.0  cap -17282  mf True  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=09B641AE-E00D-ED11-82E3-001DD80698CB
+ 5. 2015-09-24 O2015-4703      unknown       601-603 N Central Park Ave                
+    RT-4 → RM-4.5                            FAR 1.2 → 1.7 (district_table)  Δ 0.5 [+]  lot 6187.0  cap 3094  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=25232AC7-E00D-ED11-82E3-001DD80693B4
+ 6. 2016-04-13 SO2015-8484     type_1        2430 W Cortez St                          
+    RT-4 → RM-4.5                            FAR 1.2 → 1.7 (district_table)  Δ 0.5 [+]  lot 2965.0  cap 1482  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=57BC17D9-E00D-ED11-82E3-001DD80693B4
+ 7. 2016-07-20 SO2016-4759     type_1        2331-2333 W Montana St                    
+    M1-2 → RT-4                              FAR 2.2 → 1.2 (district_table)  Δ -1.0 [-]  lot 4772.0  cap -4772  mf True  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=B08BFAF6-E00D-ED11-82E3-001DD80693B4
+ 8. 2016-12-14 SO2016-8045     unknown       3''' Ward                                 
+    POS-1+RM-5 → POS-1                       FAR None → None (district_table)  Δ None [?]  lot 80440.0  cap None  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=E4DBEF01-E10D-ED11-82E3-001DD80698CB
+ 9. 2017-12-13 O2017-7745      map_amendment 4506 N Sheridan Rd                        
+    RT-4 → B2-1                              FAR 1.2 → 1.2 (district_table)  Δ 0.0 [0]  lot 7436.0  cap 0  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=257BB137-E10D-ED11-82E3-001DD80698CB
+10. 2019-07-24 SO2018-4986     type_1        800-804 W Algeld St                       
+    RT-4+B3-3 → B3-3                         FAR 2.1 → 3.0 (district_table)  Δ 0.9 [+]  lot 5572.0  cap 5015  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=91DB8A55-E10D-ED11-82E3-001DD80698CB
+11. 2019-09-18 O2019-5536      type_1        4201 W Division St                        
+    C1-1 → RM-6                              FAR 1.2 → 4.4 (district_table)  Δ 3.2 [+]  lot 12362.0  cap 39558  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=ECDC7BC2-E10D-ED11-82E3-001DD80693B4
+12. 2019-10-16 O2019-6813      map_amendment 3538 N Lowell Ave                         
+    RS-3 → RM-4.5                            FAR 0.9 → 1.7 (district_table)  Δ 0.8 [+]  lot 6288.0  cap 5030  mf True  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=578776C8-E10D-ED11-82E3-001DD80693B4
+13. 2020-10-07 O2020-4497      type_1        1355-1359 W 79th St                       
+    RS-1+B1-2 → B1-2                         FAR 1.35 → 2.2 (district_table)  Δ 0.85 [+]  lot 3433.0  cap 2918  mf True  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=634AEFF0-E10D-ED11-82E3-001DD80698CB
+14. 2020-10-07 O2020-4547      type_1        3407-3409 N Bosworth Ave                  
+    RT-3.5 → RM-4.5                          FAR 1.05 → 1.7 (district_table)  Δ 0.65 [+]  lot 6169.0  cap 4010  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=69F293F2-E10D-ED11-82E3-001DD80693B4
+15. 2021-02-26 O2021-419       map_amendment 4316 W Gladys Ave                         
+    RT-4 → RM-4.5                            FAR 1.2 → 1.7 (district_table)  Δ 0.5 [+]  lot 3105.0  cap 1552  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=F79284FE-E10D-ED11-82E3-001DD80693B4
+16. 2021-09-14 O2021-3117      type_1        315-325 W 32nd St.                        
+    M1-2 → RM-4.5                            FAR 2.2 → 1.7 (district_table)  Δ -0.5 [-]  lot 6217.0  cap -3108  mf True  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=A884770A-E20D-ED11-82E3-001DD80693B4
+17. 2022-02-23 O2022-283       type_1        3431 N Ashland Ave                        
+    C1-2 → B2-3                              FAR 2.2 → 3.0 (district_table)  Δ 0.8 [+]  lot 10486.0  cap 8389  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=F66A601C-E20D-ED11-82E3-001DD80693B4
+18. 2022-05-25 SO2022-1109     type_1        1215-1219 W Devon Ave                     
+    B3-1 → B3-3                              FAR 1.2 → 3.0 (district_table)  Δ 1.8 [+]  lot 4560.0  cap 8208  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=080F6D57-23F4-ED11-A7C6-001DD806AE67
+19. 2025-09-25 O2025-0018858   type_1        6519 W Addison St                         
+    RT-4 → RT-4                              FAR 1.2 → 1.2 (district_table)  Δ 0.0 [0]  lot 7453.0  cap 0  mf False  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=3E8544AC-4766-F011-BEC1-001DD80DE488
+20. 2026-09-23 O2026-0026924   aldermanic    7104-7128 S Drexel Ave                    
+    RS-3 → RT-4                              FAR 0.9 → 1.2 (district_table)  Δ 0.3 [+]  lot 2580823.0  cap 774247  mf True  via regex_ordinance
+    https://chicityclerkelms.chicago.gov/Matter/?matterId=FA0CF4B2-CA7B-F111-AB0D-001DD8066831

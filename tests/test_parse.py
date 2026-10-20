@@ -93,3 +93,50 @@ def test_classify_direct_pd_keeps_prior_far():
 def test_classify_downzoning():
     c = classify(_row("RT-4", "RS-3"), load_districts())
     assert c["downzoning"] and not c["upzoning"] and c["to_multifamily"] is False
+
+
+# ------------------------------------------------------------------------------------------------
+from zonewise.build import reconcile  # noqa: E402
+from zonewise.citymap import map_to_code, norm_class  # noqa: E402
+
+
+def _rez(froms, chain, method="regex_ordinance"):
+    return {"from_districts": froms, "district_chain": chain, "to_district": chain.split(">")[-1] if chain else "",
+            "parse_method": method}
+
+
+def _map(classes, snapshot="current", dominant=None, from_class=""):
+    return {"map_snapshot": snapshot, "map_classes": classes, "map_dominant_class": dominant or classes.split("+")[0],
+            "map_from_class": from_class}
+
+
+def test_map_codes_normalize():
+    assert map_to_code("RM4.5") == "RM-4.5" and map_to_code("PD 1277") == "PD-1277" and map_to_code("PMD11") == "PMD-11"
+    assert norm_class("RM-4.5") == norm_class("RM4.5") and norm_class("PD-29") == norm_class("PD")
+
+
+def test_reconcile_agrees():
+    row, info = reconcile(_rez("RS-3", "RM-4.5"), _map("RM4.5"))
+    assert info["map_check"] == "agrees" and row["to_district"] == "RM-4.5"
+
+
+def test_reconcile_adds_missed_pd_step():
+    row, info = reconcile(_rez("B3-2", "B3-5"), _map("PD29"))
+    assert info["district_source"] == "city_map_pd_step" and row["district_chain"] == "B3-5>PD-29"
+
+
+def test_reconcile_keeps_ordinance_text_on_conflict():
+    row, info = reconcile(_rez("RS-3", "B2-2"), _map("RS-3"))
+    assert info["map_check"] == "disagrees" and info["district_source"] == "parsed" and row["to_district"] == "B2-2"
+
+
+def test_reconcile_map_beats_agenda_request():
+    row, info = reconcile(_rez("B3-1", "B3-2", method="regex_agenda"), _map("B3-3"))
+    assert info["district_source"] == "city_map_override" and row["to_district"] == "B3-3"
+
+
+def test_reconcile_fills_unparsed_but_not_from_weak_2014_match():
+    row, info = reconcile(_rez("", ""), _map("RT-4", from_class="RS-3"))
+    assert row["to_district"] == "RT-4" and row["from_districts"] == "RS-3"
+    row, info = reconcile(_rez("", ""), _map("RT-4", snapshot="2014-09"))
+    assert row["to_district"] == "" and info["map_check"] == "unparsed"

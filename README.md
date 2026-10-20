@@ -17,19 +17,60 @@ fields), and is built for ward-wise-civic-tech / Penlight. The name `zonewise` i
   2017 451 · 2018 459 · 2019 358 · 2020 308 · 2021 361 · 2022 364 · 2023 302 · 2024 322 · 2025 469.
 - **Exact-match query undercounts.** The exact-match query copied from the alerts digest covers only
   1,231 of the 5,815. The rest are Legistar-migrated records, which the category range picks up.
-- **District parse: 97.8%.** The ordinance clause gives 5,360, the committee agenda 319 and the
-  application form 9. 127 are unparsed (2.2%).
+- **District parse: 97.8% from text.** The ordinance clause gives 5,360, the committee agenda 319
+  and the application form 9. With the City zoning map filling gaps (below), 5,775 of 5,815
+  (99.3%) have a to-district.
   - The LLM-select step did not run: no `OPENAI_API_KEY` was available.
   - Where both the ordinance and the agenda were read, they agree on 3,399 and disagree on 146. The
     disagreements are mostly substitute ordinances whose passed text differs from the committee's
     "Change Request". The ordinance text wins.
-- **Placement: 98.3%.** 5,594 points from the Census geocoder, 120 from parcel centroids.
-- **Known FAR change: 5,172.** Of these, 3,180 are upzonings, 799 downzonings and the rest lateral.
-- **Known use change: 5,135**, of which 1,895 newly allow 3+ unit housing.
-- **Capacity delta known: 4,519**, i.e. lot area found for 85.6%.
-- **PD or PMD involved:** 857.
+- **Checked against the City's own zoning map: 4,846 of 5,815 (83%).** Coverage by year runs from
+  63% in 2011 to 96% in 2025 (see [Truth check](#truth-check-the-citys-zoning-map)).
+  - Where the match is solid (by application or Clerk number), our to-district agrees with the
+    map on **4,539 of 4,648 (97.7%)**.
+  - From-districts agree with an earlier map snapshot on 1,863 of 1,994 (93.4%).
+- **Placement: 99.3%.** 4,735 points at the rezoned map polygon, 1,020 from the Census geocoder
+  and 18 from parcel centroids.
+- **Known FAR change: 5,200.** Of these, 3,195 are upzonings, 805 downzonings and the rest lateral.
+- **Known use change: 5,163**, of which 1,910 newly allow 3+ unit housing.
+- **Capacity delta known: 5,054.** Lot area comes from parcels inside the rezoned map polygon for
+  4,619 and from parcels at the address range for 977.
+- **PD or PMD involved:** 903.
 - **Application types:** 1,763 Type 1, 430 aldermanic, 3,004 standard map amendments, and 618 with
   no application number in the title.
+
+## Truth check: the City's zoning map
+
+DPD's zoning-district polygons record the ordinance that last changed each polygon: application
+number, Clerk document number (recent years) and ordinance date. Joining a passed rezoning to its
+tagged polygons gives an independent statement of what the City mapped as the result. It also
+gives the rezoned area itself, used for placement and lot area. A rezoning that was later changed
+again has lost its tag in today's map, so three archived snapshots are searched too.
+
+| Map | Portal id | As of | Tags | Matched | Agree |
+|---|---|---|---|---|---|
+| current | `dj47-wfun` | 2026-10 | app no + clerk doc + date | 4,582 | 4,393 of 4,499 parsed (97.6%; incl. 3 chain-step) |
+| 2015-12 | `xfyf-x4kx` | 2015-12-09 | app no + date | 125 | 118 of 121 parsed (97.5%) |
+| 2014-09 | `nifi-zqag` | 2014-09-29 | ordinance **date only** | 111 | 76 of 98 parsed (78%), so check-only |
+| 2012-11 | `p8va-airx` (shapefile) | 2012-11-21 | app no + date | 28 | 28 of 28 |
+
+How conflicts are resolved (`district_source`, `map_check` on every point):
+
+- **Missed PD step: 53.** The map shows a PD where we read only the first step of a two-step
+  ordinance (B3-2 → B3-5 → PD). The PD is appended to the chain, so the FAR stays the underlying
+  district's (`city_map_pd_step`).
+- **Agenda or application reading: 4.** The map wins over a committee *request*
+  (`city_map_override`).
+- **Ordinance text vs. map: 52.** Kept as parsed and flagged `map_check: disagrees`. The causes
+  are substitutes, later amendments that kept the tag, and stale tags, and the two sources can't
+  be ranked automatically. They are listed for review in `data/review/map_conflicts.csv`.
+- **Unparsed: 87 filled.** Matters with no readable text take the map's class (`city_map`). The
+  from-district comes from the earlier snapshot when one is within 3 years (`city_map+prior_snapshot`).
+- **The 2014-09 snapshot** matches on date + proximity (1,500 ft) only. It is used to check, never
+  to fill, place or measure.
+
+969 passed rezonings have no tagged polygon in any snapshot, mostly superseded between snapshots
+(2016–2026 has no archived map). They rely on the text parse alone.
 
 ## Metrics (`data/layers/aggregation_spec.json`)
 
@@ -56,7 +97,10 @@ them before this source is released (see ward-wise-measures `CONTRACT.md`, "Time
 `to_multifamily`, `pd_or_pmd`, `far_delta`, `from_far`, `to_far`, `to_far_basis`,
 `capacity_sqft_delta`, `lot_area_sqft`, `address`, `matter_id`, `record_number`, `app_no`,
 `app_kind` (`type_1` / `aldermanic` / `map_amendment`), `type_1`, `introduced_date`,
-`parse_method`, `geocode_source`, `url` (the eLMS matter page).
+`parse_method`, `geocode_source`, `lot_area_source`, `district_source`, `parsed_to_district`,
+`map_check` (`agrees` / `agrees_chain_step` / `disagrees` / `unparsed` / null), `map_from_check`,
+`map_snapshot`, `map_zone_classes`, `map_area_sqft` (tagged polygon area, which runs to street
+and alley centerlines), `url` (the eLMS matter page).
 
 A field is `null` when it isn't known. Nothing is guessed.
 
@@ -66,8 +110,9 @@ A field is `null` when it isn't known. Nothing is guessed.
 |---|---|
 | Ordinances | Office of the City Clerk **eLMS API**, `https://api.chicityclerkelms.chicago.gov/matter`. The query is copied from ward-wise-civic-tech `alerts_digest.load_zoning`: `matterCategory eq 'ZONING RECLASSIFICATIONS'`. It is widened to the string range `matterCategory ge 'ZONING RECLASSIFICATIONS' and lt 'ZONING RECLASSIFICATIONT'`, because matters migrated from Legistar are filed as `ZONING RECLASSIFICATIONS \| Map No.  7-G`. The exact match alone returns only the eLMS-native records (late 2022 onward). |
 | From/to districts | Each matter's **Legislation PDF**. Legacy PDFs have a text layer; modern ones are bare scans, read with macOS Vision OCR. Also the **Zoning Committee agenda and summary PDFs** (eLMS `/meeting`, 2011 onward), whose "Change Request" lines are joined to matters on the application number. |
-| Points | **US Census Bureau batch geocoder** (`Public_AR_Current`), with the request format copied from ward-wise-civic-tech `census_geocode.py`. When the Census geocoder misses but the address matched parcels, the fallback is the parcel centroid from **Cook County Assessor Parcel Universe** (`pabr-t5kh`). |
-| Lot area | **Cook County Assessor Parcel Addresses** (`3723-97qp`, tax year 2025) gives address → PIN. **ccgisdata Parcel 2021** (`77tz-riq7`) polygons give PIN → area. Parcel Universe has no land-area field. |
+| Truth set, rezoned areas | **City of Chicago zoning-district map**: current (`dj47-wfun`) plus archived snapshots `xfyf-x4kx` (2015-12), `nifi-zqag` (2014-09) and `p8va-airx` (2012-11 shapefile). See [Truth check](#truth-check-the-citys-zoning-map). |
+| Points | The interior point of the rezoned map polygon; otherwise the **US Census Bureau batch geocoder** (`Public_AR_Current`), with the request format copied from ward-wise-civic-tech `census_geocode.py`. When the Census geocoder misses but the address matched parcels, the fallback is the parcel centroid from **Cook County Assessor Parcel Universe** (`pabr-t5kh`). |
+| Lot area | **ccgisdata Parcel 2021** (`77tz-riq7`): parcels whose centroid falls inside the rezoned map polygon(s) of the final district. Fallback: **Cook County Assessor Parcel Addresses** (`3723-97qp`, tax year 2025) gives address → PIN. **ccgisdata Parcel 2021** (`77tz-riq7`) polygons give PIN → area. Parcel Universe has no land-area field. |
 | District → FAR, multifamily | `data/districts.csv`. It is version-controlled, and every row cites its Chicago Zoning Ordinance (Municipal Code Title 17) section from the American Legal Publishing text, current through at least Coun. J. 10-16-25. |
 
 ## Method
@@ -95,7 +140,13 @@ A field is `null` when it isn't known. Nothing is guessed.
 4. **Lots** (`python -m zonewise lots`). Every address segment in the title expands to house
    numbers of the same parity, which are matched to PINs. Lot area = Σ distinct PIN10 polygon
    areas.
-5. **Classify and build** (`python -m zonewise build`):
+5. **City map** (`python -m zonewise citymap`). This joins each passed rezoning to the polygons
+   tagged with its Clerk number or application number in the current map, then in the snapshots.
+   Guards: the map's ordinance date must be within 45 days of the vote, and the polygon within
+   1,500 ft of our geocoded point. For each rezoning it records the classes, area and interior
+   point, the from-class in the earlier snapshot, and the 2021 parcels inside the polygons.
+6. **Classify and build** (`python -m zonewise build`). This reconciles the parse with the map
+   (rules above), then:
    - `from_far` is the mean max FAR of the from-district(s).
    - `to_far` is the final district's FAR. A **Planned Development has no FAR of its own**: per
      17-8-0901 it must comply with the FAR of the district in force just before PD approval. So a
@@ -107,13 +158,13 @@ A field is `null` when it isn't known. Nothing is guessed.
    - `capacity_sqft_delta` = `far_delta × lot_area_sqft`.
 
    The build also writes the three layers and the spec.
-6. **Spot-check** (`python -m zonewise sample -n 20`). The latest sample is in
+7. **Spot-check** (`python -m zonewise sample -n 20`). The latest sample is in
    `data/spot_check_sample.txt`.
 
-`python -m zonewise all` runs steps 2–6 from the cache. `python -m pytest` runs offline tests.
+`python -m zonewise all` runs steps 2–7 from the cache. `python -m pytest` runs offline tests.
 
 Requirements: Python ≥ 3.11 and poppler (`pdftotext`, `pdftoppm`). OCR also needs macOS with
-`pyobjc-framework-Vision`. There are no other third-party dependencies.
+`pyobjc-framework-Vision`. The city-map step needs `shapely`, `pyproj` and `pyshp`.
 
 ## Caveats
 
@@ -129,11 +180,13 @@ Requirements: Python ≥ 3.11 and poppler (`pdftotext`, `pdftoppm`). OCR also ne
   premium (17-2-0304-C), and the ARO. RT-4A has no FAR row in 17-2-0304-A, so the RT-4 value is
   used and the row is marked `uncertain`. POS has no numeric FAR, so rezonings to or from parks have
   `far_delta: null`. A PD amendment (PD → PD) has unknown FAR on both sides.
-- **Lot area is a proxy.** It is the parcels at the stated address range. The ordinance's bounded
-  area can cover part of a lot, include alleys, or include lots addressed on a side street. Ranges
-  over 400 house numbers are skipped.
+- **Lot area.** Where the map polygon is found, lot area is the parcels whose centroid falls inside
+  it, which is close to the true lot area. Otherwise it is the parcels at the stated address range,
+  a proxy that runs low: a median 0.68× the map polygon area, which itself includes half the street
+  and alley. Ranges over 400 house numbers are skipped.
 - **Split-zoned lots** (two from-districts) average the from-FARs, with equal weight per district.
-- **Geography.** Points sit at the first address of the range. Ward values use the current ward map
+- **Geography.** Points sit inside the rezoned polygon when the map has it, otherwise at the first
+  address of the range. Ward values use the current ward map
   (Penlight's convention for annual metrics), not the map in force when the ordinance passed.
 - **Direction.** `higher` is a housing-supply framing: more rezonings, more upzoning and more
   capacity count as better. Some residents will disagree; the metric reports a lever, not a verdict.
