@@ -70,7 +70,62 @@ How conflicts are resolved (`district_source`, `map_check` on every point):
   to fill, place or measure.
 
 969 passed rezonings have no tagged polygon in any snapshot, mostly superseded between snapshots
-(2016–2026 has no archived map). They rely on the text parse alone.
+(2016–2026 has no archived map). They rely on the text parse alone. That gap is not backfilled, but
+it stops growing: from 2026-10 on, each [refresh](#refresh-monthly) archives our own copy of
+`dj47-wfun`. The newest copy becomes `current`, and each older copy is a snapshot labelled by its
+archive date (`map_snapshot: 2026-11-02`, say). Older copies are matched exactly like `current`:
+Clerk doc first, then app no, with the same date and distance guards. So a rezoning passed after
+2026-10-19 and rezoned again later still validates against the first copy taken after it passed.
+Copies also serve as from-district snapshots for votes after them.
+
+## Refresh (monthly)
+
+```bash
+python -m zonewise refresh
+```
+
+This is the monthly job. It runs, in order:
+
+1. **`fetch --refresh`.** Re-pages the eLMS matter list and the Zoning Committee meeting list
+   (about 15 requests), appending a fresh pass to `data/raw/elms_matter_pages.jsonl` and
+   `elms_meetings.jsonl`. Later rows win, and nothing is deleted. It then fetches details only for
+   matters that are new or whose list row changed (`status`, `subStatus`, `finalActionDate`,
+   `lastPublicationDate`), such as a pending matter that has now passed. Ordinance PDFs and
+   agendas are read only when they aren't cached yet. Workers are capped at 6, and HTTP 429 backs
+   off exponentially.
+2. **`archive`.** Checks `rowsUpdatedAt` on the portal's metadata for `dj47-wfun`
+   (`/api/views/dj47-wfun.json`). If it has changed since the last copy, the step downloads
+   `/resource/dj47-wfun.geojson?$limit=50000` and saves the bytes exactly as served to
+   `data/raw/city_zoning_archive/dj47-wfun_<YYYY-MM-DD>.geojson.gz`. It appends
+   `{dataset, date, path, sha256, bytes, rows, rows_updated_at, fetched_at}` to `manifest.jsonl`
+   in that folder; the sha256 is of the uncompressed GeoJSON. When the content matches the
+   previous copy, the line is written with `path: null` and no second file. A response of 50,000
+   rows would mean it was cut off, so the step stops.
+3. **`all`.** Then parse → geocode → lots → citymap → build → sample, from the caches.
+
+It is idempotent and resumable. Every fetch checks its append-only cache first, so rerunning after
+a crash or a 429 storm picks up where the last run stopped, and a second run in a month re-pages
+the lists and does nothing else. A lock (`data/raw/.refresh.lock`) stops two runs overlapping.
+`data/raw/` is gitignored, so the archive lives on this machine only. **Back it up**: unlike
+everything else in `data/raw/`, it cannot be refetched.
+
+**Schedule.** City Council meets monthly, so the job runs on the 2nd of each month. The launchd job
+is in [`ops/org.zagwa.zonewise.refresh.plist`](ops/org.zagwa.zonewise.refresh.plist) (07:00,
+logs to `data/refresh.log`). Unlike cron, launchd runs a missed job when the laptop next wakes. It
+is **not installed**. To install it:
+
+```bash
+cp ops/org.zagwa.zonewise.refresh.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/org.zagwa.zonewise.refresh.plist
+```
+
+The equivalent cron line, if preferred (`crontab -e`):
+
+```
+0 7 2 * * cd /Users/tuuntr/Documents/GitHub/zonewise && PATH=/opt/homebrew/bin:$PATH /Users/tuuntr/.pyenv/versions/3.12.7/bin/python3 -m zonewise refresh >> data/refresh.log 2>&1
+```
+
+After a refresh, the rebuilt `data/layers/` and `data/review/` are uncommitted changes. Review the
+coverage lines in the log, run `byop validate data/layers`, and then commit.
 
 ## Metrics (`data/layers/aggregation_spec.json`)
 
@@ -110,7 +165,7 @@ A field is `null` when it isn't known. Nothing is guessed.
 |---|---|
 | Ordinances | Office of the City Clerk **eLMS API**, `https://api.chicityclerkelms.chicago.gov/matter`. The query is copied from ward-wise-civic-tech `alerts_digest.load_zoning`: `matterCategory eq 'ZONING RECLASSIFICATIONS'`. It is widened to the string range `matterCategory ge 'ZONING RECLASSIFICATIONS' and lt 'ZONING RECLASSIFICATIONT'`, because matters migrated from Legistar are filed as `ZONING RECLASSIFICATIONS \| Map No.  7-G`. The exact match alone returns only the eLMS-native records (late 2022 onward). |
 | From/to districts | Each matter's **Legislation PDF**. Legacy PDFs have a text layer; modern ones are bare scans, read with macOS Vision OCR. Also the **Zoning Committee agenda and summary PDFs** (eLMS `/meeting`, 2011 onward), whose "Change Request" lines are joined to matters on the application number. |
-| Truth set, rezoned areas | **City of Chicago zoning-district map**: current (`dj47-wfun`) plus archived snapshots `xfyf-x4kx` (2015-12), `nifi-zqag` (2014-09) and `p8va-airx` (2012-11 shapefile). See [Truth check](#truth-check-the-citys-zoning-map). |
+| Truth set, rezoned areas | **City of Chicago zoning-district map**: current (`dj47-wfun`), our own monthly copies of it from 2026-10-19 (`data/raw/city_zoning_archive/`), and the portal's archived snapshots `xfyf-x4kx` (2015-12), `nifi-zqag` (2014-09) and `p8va-airx` (2012-11 shapefile). See [Truth check](#truth-check-the-citys-zoning-map). |
 | Points | The interior point of the rezoned map polygon; otherwise the **US Census Bureau batch geocoder** (`Public_AR_Current`), with the request format copied from ward-wise-civic-tech `census_geocode.py`. When the Census geocoder misses but the address matched parcels, the fallback is the parcel centroid from **Cook County Assessor Parcel Universe** (`pabr-t5kh`). |
 | Lot area | **ccgisdata Parcel 2021** (`77tz-riq7`): parcels whose centroid falls inside the rezoned map polygon(s) of the final district. Fallback: **Cook County Assessor Parcel Addresses** (`3723-97qp`, tax year 2025) gives address → PIN. **ccgisdata Parcel 2021** (`77tz-riq7`) polygons give PIN → area. Parcel Universe has no land-area field. |
 | District → FAR, multifamily | `data/districts.csv`. It is version-controlled, and every row cites its Chicago Zoning Ordinance (Municipal Code Title 17) section from the American Legal Publishing text, current through at least Coun. J. 10-16-25. |
@@ -161,7 +216,8 @@ A field is `null` when it isn't known. Nothing is guessed.
 7. **Spot-check** (`python -m zonewise sample -n 20`). The latest sample is in
    `data/spot_check_sample.txt`.
 
-`python -m zonewise all` runs steps 2–7 from the cache. `python -m pytest` runs offline tests.
+`python -m zonewise all` runs steps 2–7 from the cache, and `python -m zonewise refresh` runs
+fetch, archive and all ([Refresh](#refresh-monthly)). `python -m pytest` runs offline tests.
 
 Requirements: Python ≥ 3.11 and poppler (`pdftotext`, `pdftoppm`). OCR also needs macOS with
 `pyobjc-framework-Vision`. The city-map step needs `shapely`, `pyproj` and `pyshp`.

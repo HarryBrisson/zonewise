@@ -9,8 +9,8 @@ the category `ZONING RECLASSIFICATIONS | Map No.  7-G`, so we page the string ra
 ['ZONING RECLASSIFICATIONS', 'ZONING RECLASSIFICATIONT') instead, a superset of the exact match, and
 keep the exact-match flag on each record.
 
-Caches (append-only JSONL under data/raw/):
-  elms_matter_pages.jsonl    one line per list page: {url, fetched_at, response}
+Caches (append-only JSONL under data/raw/; a later line for the same key wins):
+  elms_matter_pages.jsonl    one line per list page: {url, fetched_at, response}  (`--refresh` appends a fresh pass)
   elms_matter_details.jsonl  one line per matter:    {matter_id, url, fetched_at, response}
   elms_attachment_text.jsonl one line per PDF:       {matter_id, path, file_name, sha256, method, pages[]}
   elms_meetings.jsonl        one line per page of Zoning Committee meetings
@@ -59,10 +59,11 @@ def log(*parts: Any) -> None:
 # Matter list + details
 # ------------------------------------------------------------------------------------------------
 def fetch_matter_pages(*, refresh: bool = False) -> list[dict[str, Any]]:
-    """Every zoning matter (list rows). Cached pages are reused unless refresh."""
+    """Every zoning matter (list rows). Cached pages are reused unless refresh, which appends a
+    fresh pass over the whole list (new matters sort in between old record numbers, and a pending
+    matter's status changes in place). Nothing is deleted: rows from later passes win."""
     if PAGES.exists() and not refresh:
         return matters_from_pages()
-    PAGES.unlink(missing_ok=True)
     skip = 0
     while True:
         url = f"{CLERK_API}/matter?{urlencode({'filter': RANGE_FILTER, 'sort': 'recordNumber asc', 'top': PAGE, 'skip': skip})}"
@@ -84,6 +85,20 @@ def matters_from_pages() -> list[dict[str, Any]]:
     return list(seen.values())
 
 
+CHANGE_FIELDS = ("status", "subStatus", "finalActionDate", "lastPublicationDate")
+
+
+def stale_details(rows: list[dict[str, Any]], details: dict[str, dict[str, Any]]) -> list[str]:
+    """Matters whose detail must be (re)fetched: not cached yet, or the list row now says something
+    the cached detail doesn't (a pending matter that passed, a republished record)."""
+    out = []
+    for row in rows:
+        detail = details.get(row["matterId"])
+        if detail is None or any((row.get(f) or "") != (detail.get(f) or "") for f in CHANGE_FIELDS):
+            out.append(row["matterId"])
+    return out
+
+
 def cached_details() -> dict[str, dict[str, Any]]:
     """{matterId: detail}. The detail endpoint returns its JSON double-encoded (a JSON string);
     the cache keeps it as received and decodes here."""
@@ -94,10 +109,10 @@ def cached_details() -> dict[str, dict[str, Any]]:
     return out
 
 
-def fetch_details(matter_ids: list[str], *, workers: int = 8) -> None:
-    have = set(cached_details())
-    todo = [m for m in matter_ids if m not in have]
-    log(f"details: {len(have)} cached, {len(todo)} to fetch")
+def fetch_details(rows: list[dict[str, Any]], *, workers: int = 6) -> None:
+    details = cached_details()
+    todo = stale_details(rows, details)
+    log(f"details: {len(details)} cached, {len(todo)} to fetch ({sum(1 for m in todo if m in details)} changed)")
 
     def one(matter_id: str) -> None:
         url = f"{CLERK_API}/matter/{matter_id}"
@@ -238,20 +253,22 @@ def fetch_attachment_text(details: dict[str, dict[str, Any]], matter_ids: list[s
 # Zoning Committee agendas + summaries
 # ------------------------------------------------------------------------------------------------
 def fetch_meetings(*, refresh: bool = False) -> list[dict[str, Any]]:
-    if MEETINGS.exists() and not refresh:
-        return [m for page in read_jsonl(MEETINGS) for m in page["response"].get("data") or []]
-    MEETINGS.unlink(missing_ok=True)
-    meetings, skip = [], 0
-    while True:
-        url = f"{CLERK_API}/meeting?{urlencode({'search': 'Zoning', 'sort': 'date asc', 'top': PAGE, 'skip': skip})}"
-        response = get_json(url)
-        append_jsonl(MEETINGS, {"url": url, "fetched_at": now_iso(), "response": response})
-        rows = response.get("data") or []
-        meetings += rows
-        if len(rows) < PAGE:
-            break
-        skip += PAGE
-    return meetings
+    """Zoning Committee meetings. Like the matter list, refresh appends a fresh pass; the latest
+    row per meetingId wins (an agenda is posted before the meeting, the summary after)."""
+    if not MEETINGS.exists() or refresh:
+        skip = 0
+        while True:
+            url = f"{CLERK_API}/meeting?{urlencode({'search': 'Zoning', 'sort': 'date asc', 'top': PAGE, 'skip': skip})}"
+            response = get_json(url)
+            append_jsonl(MEETINGS, {"url": url, "fetched_at": now_iso(), "response": response})
+            if len(response.get("data") or []) < PAGE:
+                break
+            skip += PAGE
+    seen: dict[str, dict[str, Any]] = {}
+    for page in read_jsonl(MEETINGS):
+        for row in page["response"].get("data") or []:
+            seen[row["meetingId"]] = row
+    return list(seen.values())
 
 
 def fetch_meeting_text(meetings: list[dict[str, Any]], *, workers: int = 4) -> None:
@@ -298,11 +315,15 @@ def is_passed(row: dict[str, Any], detail: dict[str, Any] | None) -> bool:
     return (row.get("subStatus") or row.get("legacyStatus") or "").lower().startswith("passed")
 
 
-def fetch_all(*, refresh: bool = False, workers: int = 8) -> None:
+MAX_WORKERS = 6  # eLMS answers 429 from about 8 parallel clients
+
+
+def fetch_all(*, refresh: bool = False, workers: int = MAX_WORKERS) -> None:
+    workers = min(workers, MAX_WORKERS)
     with run_lock("fetch"):
         rows = fetch_matter_pages(refresh=refresh)
         log(f"{len(rows)} zoning matters")
-        fetch_details([r["matterId"] for r in rows], workers=workers)
+        fetch_details(rows, workers=workers)
         details = cached_details()
         passed = [r["matterId"] for r in rows if r.get("type") == "Ordinance" and is_passed(r, details.get(r["matterId"]))]
         log(f"{len(passed)} passed ordinances")

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Monthly zonewise refresh: 07:00 on the 2nd (City Council meets monthly). NOT installed by
+     default; see README "Refresh". launchd runs a missed StartCalendarInterval job at next wake,
+     which cron does not. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>org.zagwa.zonewise.refresh</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/tuuntr/.pyenv/versions/3.12.7/bin/python3</string>
+    <string>-m</string>
+    <string>zonewise</string>
+    <string>refresh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/tuuntr/Documents/GitHub/zonewise</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Day</key>
+    <integer>2</integer>
+    <key>Hour</key>
+    <integer>7</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/tuuntr/Documents/GitHub/zonewise/data/refresh.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/tuuntr/Documents/GitHub/zonewise/data/refresh.log</string>
+</dict>
+</plist>

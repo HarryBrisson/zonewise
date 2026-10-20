@@ -11,6 +11,10 @@ mapped, the exact rezoned area and its location. Four snapshots (all raw files c
   2012-11  p8va-airx  Zoning_nov2012 shapefile (deprecated Oct 2014)  tags: app no + date
 
 A rezoning later rezoned again loses its tag in the current map; the snapshots catch some of those.
+From 2026-10 on, `python -m zonewise refresh` also keeps our own monthly copies of dj47-wfun
+(archive.py). The newest copy is `current`; every older copy is a snapshot labelled by its archive
+date, matched exactly like `current` (Clerk doc, then app no; ordinance date within 45 days). So a
+rezoning later superseded still validates against the copy taken after it passed.
 The 2014 snapshot has no application number, so it matches on ordinance date AND overlap with the
 rezoning's geocoded point (within MATCH_FT).
 
@@ -36,7 +40,7 @@ from .elms import log
 from .parse import app_key
 
 PORTAL = "https://data.cityofchicago.org"
-SNAPSHOTS = [  # label, dataset id, as-of date (latest ordinance/edit date in the file)
+SNAPSHOTS = [  # the portal's own copies: label, dataset id, as-of date (latest ordinance/edit date in the file)
     ("current", "dj47-wfun", None),
     ("2015-12", "xfyf-x4kx", "2015-12-09"),
     ("2014-09", "nifi-zqag", "2014-09-29"),
@@ -48,6 +52,13 @@ FROM_MAX_DAYS = 3 * 365   # an earlier snapshot older than this is too stale to 
 PARCELS_URL = "https://datacatalog.cookcountyil.gov/resource/77tz-riq7.json"
 PARCEL_POINTS = RAW / "parcel_points_2021.jsonl"
 OUT = PROCESSED / "city_map_join.csv"
+
+
+def snapshot_order(copies: list[dict[str, Any]]) -> list[tuple[str, str | None]]:
+    """[(label, as_of)] in matching order: current, our archived copies newest first, then the
+    portal snapshots. `copies` is archive.archived_copies() (oldest first); the newest is current."""
+    return ([("current", None)] + [(c["date"], c["date"]) for c in reversed(copies[:-1])]
+            + [(label, as_of) for label, _, as_of in SNAPSHOTS if label != "current"])
 
 
 def snapshot_path(label: str) -> Path:
@@ -92,9 +103,13 @@ def _clean_class(z: Any) -> str:
     return re.sub(r"\s", "", str(z or "")).upper()
 
 
-def load_snapshot(label: str) -> list[Poly]:
+def load_snapshot(label: str, copies: list[dict[str, Any]] | None = None) -> list[Poly]:
+    """Polygons of one snapshot. With archived `copies`, `current` is the newest copy and a date
+    label is the copy archived that day; otherwise `current` is the portal file cached at first run."""
     from shapely.geometry import shape
     from shapely.ops import transform
+
+    from .archive import read_copy
 
     out: list[Poly] = []
     if label == "2012-11":
@@ -107,7 +122,14 @@ def load_snapshot(label: str) -> list[Poly]:
                             d["ORDINANCE1"].isoformat() if d["ORDINANCE1"] else "", shape(shp.__geo_interface__).buffer(0)))
         return out
     project = _to_3435()
-    for feature in json.loads(snapshot_path(label).read_text())["features"]:
+    by_date = {c["date"]: c for c in copies or []}
+    if label == "current" and copies:
+        collection = read_copy(copies[-1])
+    elif label in by_date:
+        collection = read_copy(by_date[label])
+    else:
+        collection = json.loads(snapshot_path(label).read_text())
+    for feature in collection["features"]:
         p = feature["properties"]
         if not feature.get("geometry"):
             continue
@@ -184,30 +206,65 @@ def _days(a: str, b: str) -> int:
     return abs((date.fromisoformat(a) - date.fromisoformat(b)).days)
 
 
-def run_citymap(*, workers: int = 4) -> None:
-    from shapely import STRtree
-    from shapely.geometry import Point
-    from shapely.ops import transform, unary_union
-
-    from .build import in_chicago
-    from .geocode import cached_points, clean_lookup
-    from .lots import fetch_polygons
-
-    fetch_snapshots()
-    snaps = {label: load_snapshot(label) for label, _, _ in SNAPSHOTS}
-    as_of = {label: (d or max(p.ord_date for p in snaps[label] if p.ord_date)) for label, _, d in SNAPSHOTS}
-    log("citymap: " + ", ".join(f"{k} {len(v)} polygons (as of {as_of[k]})" for k, v in snaps.items()))
-    by_doc: dict[str, list[Poly]] = defaultdict(list)
+def index(snaps: dict[str, list[Poly]]) -> tuple[dict, dict, dict]:
+    """by_doc[(label, clerk doc)], by_app[(label, app no)], by_date[2014-09 ordinance date]."""
+    by_doc: dict[tuple[str, str], list[Poly]] = defaultdict(list)
     by_app: dict[tuple[str, str], list[Poly]] = defaultdict(list)
     by_date: dict[str, list[Poly]] = defaultdict(list)
     for label, polys in snaps.items():
         for p in polys:
             if p.doc:
-                by_doc[p.doc].append(p)
+                by_doc[(label, p.doc)].append(p)
             if p.app:
                 by_app[(label, p.app)].append(p)
             if label == "2014-09" and p.ord_date:
                 by_date[p.ord_date].append(p)
+    return by_doc, by_app, by_date
+
+
+def match(r: dict[str, str], here: Any, order: list[str], as_of: dict[str, str], by_doc: dict, by_app: dict,
+          by_date: dict) -> list[Poly]:
+    """The tagged polygons of one passed rezoning in the first snapshot (in `order`) that has them.
+    A snapshot older than the vote can't hold its tag and is skipped (`current` never is). Every
+    snapshot but 2014-09 matches on Clerk doc, then app no; 2014-09 has only ordinance dates, so it
+    matches on date AND proximity. In all of them the map's ordinance date must be within
+    DATE_SLACK_DAYS of the vote and, when we have a point, the polygon within MATCH_FT of it."""
+    record = r["record_number"].upper()
+    for label in order:
+        if label != "current" and as_of[label] < r["passed_date"]:
+            continue  # the snapshot predates the vote
+        if label == "2014-09":
+            cands = [p for p in by_date.get(r["passed_date"], []) if here is not None and p.geom.distance(here) <= MATCH_FT]
+        else:
+            cands = by_doc.get((label, record)) or by_doc.get((label, re.sub(r"^S", "", record))) or []
+            cands = cands or (by_app.get((label, r["app_no"]), []) if r["app_no"] else [])
+        cands = [p for p in cands if not p.ord_date or _days(p.ord_date, r["passed_date"]) <= DATE_SLACK_DAYS]
+        if here is not None and cands:
+            cands = [p for p in cands if p.geom.distance(here) <= MATCH_FT]  # an app number reused/misread elsewhere is not this rezoning
+        if cands:
+            return cands
+    return []
+
+
+def run_citymap(*, workers: int = 4) -> None:
+    from shapely import STRtree
+    from shapely.geometry import Point
+    from shapely.ops import transform, unary_union
+
+    from .archive import archived_copies
+    from .build import in_chicago
+    from .geocode import cached_points, clean_lookup
+    from .lots import fetch_polygons
+
+    fetch_snapshots()
+    copies = archived_copies()
+    ordered = snapshot_order(copies)
+    order = [label for label, _ in ordered]
+    snaps = {label: load_snapshot(label, copies) for label in order}
+    as_of = {label: (d or max(p.ord_date for p in snaps[label] if p.ord_date)) for label, d in ordered}
+    current_from = f"archived copy {copies[-1]['date']}" if copies else snapshot_path("current").name
+    log(f"citymap: current = {current_from}; " + ", ".join(f"{k} {len(v)} polygons (as of {as_of[k]})" for k, v in snaps.items()))
+    by_doc, by_app, by_date = index(snaps)
     trees = {label: STRtree([p.geom for p in polys]) for label, polys in snaps.items()}
 
     project, unproject = _to_3435(), _from_3435()
@@ -218,25 +275,7 @@ def run_citymap(*, workers: int = 4) -> None:
     for r in rows:
         pt = (geo.get(clean_lookup(r["address_lookup"])) or {}).get("point")
         here = Point(*project(*pt)) if in_chicago(pt) else None
-        hits: list[Poly] = []
-        for label, _, _ in SNAPSHOTS:
-            if label != "current" and as_of[label] < r["passed_date"]:
-                continue  # the snapshot predates the vote
-            if label == "current":
-                cands = by_doc.get(r["record_number"].upper()) or by_doc.get(re.sub(r"^S", "", r["record_number"].upper())) or []
-                cands = cands or (by_app.get((label, r["app_no"]), []) if r["app_no"] else [])
-            elif label == "2014-09":
-                cands = [p for d in (r["passed_date"],) for p in by_date.get(d, [])]
-                cands = [p for p in cands if here is not None and p.geom.distance(here) <= MATCH_FT]
-            else:
-                cands = by_app.get((label, r["app_no"]), []) if r["app_no"] else []
-            cands = [p for p in cands if not p.ord_date or _days(p.ord_date, r["passed_date"]) <= DATE_SLACK_DAYS]
-            if here is not None and cands:
-                near = [p for p in cands if p.geom.distance(here) <= MATCH_FT]
-                cands = near  # an app number reused/misread elsewhere in the city is not this rezoning
-            if cands:
-                hits = cands
-                break
+        hits = match(r, here, order, as_of, by_doc, by_app, by_date)
         if not hits:
             joined.append({"matter_id": r["matter_id"]})
             continue
@@ -249,7 +288,7 @@ def run_citymap(*, workers: int = 4) -> None:
         inner = shape_all.representative_point()
         lon, lat = unproject(inner.x, inner.y)
         # FROM: the latest snapshot strictly before the vote, at the rezoned area's interior point
-        prior = [(as_of[l], l) for l, _, _ in SNAPSHOTS if l != "current" and as_of[l] < r["passed_date"]]
+        prior = [(as_of[l], l) for l in order if l != "current" and as_of[l] < r["passed_date"]]
         from_city, from_label = "", ""
         prior = [(d, l) for d, l in prior if _days(d, r["passed_date"]) <= FROM_MAX_DAYS]
         if prior:
