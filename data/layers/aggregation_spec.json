@@ -22,6 +22,42 @@
       "file": "rezonings_use_known.geojson",
       "kind": "points",
       "value": "the passed rezonings whose before and after residential use permissions are both known (the base for the multifamily share)"
+    },
+    "zoned_single_family": {
+      "file": "zoned_single_family.tif",
+      "kind": "raster",
+      "as_of": "2026-10-19",
+      "value": "1 where the zoning district is RS-1, RS-2 or RS-3 (residential single-unit), 0 in any other district, NaN off the zoning map"
+    },
+    "zoned_multifamily": {
+      "file": "zoned_multifamily.tif",
+      "kind": "raster",
+      "as_of": "2026-10-19",
+      "value": "1 where the zoning district is an RT or RM residential district, 0 in any other district, NaN off the zoning map"
+    },
+    "zoned_business_commercial": {
+      "file": "zoned_business_commercial.tif",
+      "kind": "raster",
+      "as_of": "2026-10-19",
+      "value": "1 where the zoning district is a B (business) or C (commercial) district, 0 in any other district, NaN off the zoning map"
+    },
+    "zoned_manufacturing": {
+      "file": "zoned_manufacturing.tif",
+      "kind": "raster",
+      "as_of": "2026-10-19",
+      "value": "1 where the zoning district is an M (manufacturing) district or a Planned Manufacturing District, 0 in any other district, NaN off the zoning map"
+    },
+    "zoned_planned_development": {
+      "file": "zoned_planned_development.tif",
+      "kind": "raster",
+      "as_of": "2026-10-19",
+      "value": "1 where the zoning district is a Planned Development, 0 in any other district, NaN off the zoning map"
+    },
+    "zoned_max_far": {
+      "file": "zoned_max_far.tif",
+      "kind": "raster",
+      "as_of": "2026-10-19",
+      "value": "the district's maximum floor-area ratio, NaN off the zoning map and where the district sets none (PD, POS)"
     }
   },
   "metrics": {
@@ -91,6 +127,74 @@
         2026
       ],
       "category": "material_wellbeing"
+    },
+    "zoned_single_family_only_pct": {
+      "layer": "zoned_single_family",
+      "combine": "mean",
+      "scale": 100,
+      "unit": "percent",
+      "direction": "lower",
+      "category": "material_wellbeing",
+      "label": "Single-Family Zoning",
+      "description": "Share of the area's zoned land where only houses may be built, no apartment buildings.",
+      "methodology": "Share of the zoned land (every cell inside a zoning district, downtown, parks and transportation districts included) whose district is RS-1, RS-2 or RS-3: detached houses only (RS-3 also allows two-flats), with multi-unit (3+) residential prohibited (17-2-0207). City of Chicago Boundaries - Zoning Districts (dj47-wfun) as downloaded 2026-10-19, rasterized to a 10 m grid (cell centres); the polygons run to street and alley centrelines."
+    },
+    "zoned_multifamily_pct": {
+      "layer": "zoned_multifamily",
+      "combine": "mean",
+      "scale": 100,
+      "unit": "percent",
+      "direction": "higher",
+      "category": "material_wellbeing",
+      "label": "Multifamily Zoning",
+      "description": "Share of the area's zoned land in residential districts that allow two-flats, townhouses and apartment buildings.",
+      "methodology": "Share of the zoned land (every cell inside a zoning district, downtown, parks and transportation districts included) whose district is RT-3.5 through RM-6.5, the residential districts that permit multi-unit (3+) residential by right (17-2-0207). Business, commercial and downtown districts that also allow apartments are not counted here. City of Chicago Boundaries - Zoning Districts (dj47-wfun) as downloaded 2026-10-19, rasterized to a 10 m grid (cell centres); the polygons run to street and alley centrelines."
+    },
+    "zoned_business_commercial_pct": {
+      "layer": "zoned_business_commercial",
+      "combine": "mean",
+      "scale": 100,
+      "unit": "percent",
+      "direction": "higher",
+      "category": "community_vitality",
+      "default_weight": 0,
+      "label": "Business Zoning",
+      "description": "Share of the area's zoned land in business or commercial districts, where shops and offices may go.",
+      "methodology": "Share of the zoned land (every cell inside a zoning district, downtown, parks and transportation districts included) whose district is a B1\u2013B3 business or C1\u2013C3 commercial district (17-3). Downtown districts are not counted. City of Chicago Boundaries - Zoning Districts (dj47-wfun) as downloaded 2026-10-19, rasterized to a 10 m grid (cell centres); the polygons run to street and alley centrelines."
+    },
+    "zoned_manufacturing_pct": {
+      "layer": "zoned_manufacturing",
+      "combine": "mean",
+      "scale": 100,
+      "unit": "percent",
+      "direction": "lower",
+      "category": "physical_environment",
+      "default_weight": 0,
+      "label": "Manufacturing Zoning",
+      "description": "Share of the area's zoned land set aside for industry.",
+      "methodology": "Share of the zoned land (every cell inside a zoning district, downtown, parks and transportation districts included) whose district is an M1\u2013M3 manufacturing district (17-5) or a Planned Manufacturing District (17-6-0400). City of Chicago Boundaries - Zoning Districts (dj47-wfun) as downloaded 2026-10-19, rasterized to a 10 m grid (cell centres); the polygons run to street and alley centrelines."
+    },
+    "zoned_planned_development_pct": {
+      "layer": "zoned_planned_development",
+      "combine": "mean",
+      "scale": 100,
+      "unit": "percent",
+      "direction": "higher",
+      "category": "good_governance",
+      "default_weight": 0,
+      "label": "Planned Developments",
+      "description": "Share of the area's zoned land under a Planned Development, rules negotiated for one large project.",
+      "methodology": "Share of the zoned land (every cell inside a zoning district, downtown, parks and transportation districts included) whose district is a Planned Development (17-8), whose uses and bulk are set by its own ordinance rather than a base district. City of Chicago Boundaries - Zoning Districts (dj47-wfun) as downloaded 2026-10-19, rasterized to a 10 m grid (cell centres); the polygons run to street and alley centrelines."
+    },
+    "zoned_far_mean": {
+      "layer": "zoned_max_far",
+      "combine": "mean",
+      "unit": "ratio",
+      "direction": "higher",
+      "category": "material_wellbeing",
+      "label": "Zoned FAR",
+      "description": "How much building the zoning allows, on average: floor area per square foot of land.",
+      "methodology": "Area-weighted mean of each district's maximum floor-area ratio over the zoned land (data/districts.csv, from Chicago Zoning Ordinance 17-2-0304, 17-3-0403, 17-4-0405, 17-5-0404, 17-6-0405; bonuses not included). Planned Developments, parks (POS) and PMDs without a set FAR are left out. City of Chicago Boundaries - Zoning Districts (dj47-wfun) as downloaded 2026-10-19, rasterized to a 10 m grid (cell centres); the polygons run to street and alley centrelines."
     }
   },
   "fixed_geography_metrics": {}
